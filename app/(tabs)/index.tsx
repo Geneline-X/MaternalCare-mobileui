@@ -7,13 +7,18 @@ import {
   Image,
   RefreshControl,
   SafeAreaView,
+  TouchableOpacity,
+  Dimensions,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import { LineChart } from 'react-native-chart-kit';
+import { useRouter } from 'expo-router';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const router = useRouter();
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -21,6 +26,17 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const isDoctor = user?.role === 'doctor';
+
+  const chartData = {
+    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+    datasets: [
+      {
+        data: [20, 45, 28, 80, 99, 43],
+        color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
+        strokeWidth: 2,
+      },
+    ],
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -32,13 +48,24 @@ const Dashboard: React.FC = () => {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerText}>Welcome back,</Text>
+          <View style={styles.headerTop}>
+            <Text style={styles.headerText}>Welcome back,</Text>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/notifications')}>
+                <Ionicons name="notifications-outline" size={24} color="white" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/settings')}>
+                <Ionicons name="settings-outline" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+          </View>
           <Text style={styles.userName}>{user?.name}</Text>
           <Text style={styles.role}>
             {isDoctor ? 'Healthcare Provider' : 'Patient'}
           </Text>
         </View>
 
+        {/* Rest of the component remains the same */}
         {/* Avatar and Greeting */}
         <View style={styles.profileCard}>
           <Image
@@ -50,7 +77,6 @@ const Dashboard: React.FC = () => {
             style={styles.avatar}
           />
           <View style={styles.profileInfo}>
-            <Text style={styles.greeting}>Let’s find your doctor</Text>
             <View style={styles.searchRow}>
               <Ionicons name="search" size={20} color="#aaa" />
               <Text style={styles.searchPlaceholder}>Search doctor</Text>
@@ -58,10 +84,32 @@ const Dashboard: React.FC = () => {
           </View>
         </View>
 
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity style={styles.actionButton}>
+            <View style={styles.actionIcon}>
+              <Ionicons name="person-add-outline" size={24} color="#2F80ED" />
+            </View>
+            <Text style={styles.actionText}>Add Patient</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton}>
+            <View style={styles.actionIcon}>
+              <Ionicons name="heart-outline" size={24} color="#2F80ED" />
+            </View>
+            <Text style={styles.actionText}>Add Pregnancy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton}>
+            <View style={styles.actionIcon}>
+              <Ionicons name="calendar-outline" size={24} color="#2F80ED" />
+            </View>
+            <Text style={styles.actionText}>Schedule Visit</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            {isDoctor ? 'Today’s Appointments' : 'Next Appointment'}
+            {isDoctor ? "Today's Appointments" : 'Next Appointment'}
           </Text>
           <View style={styles.card}>
             <View style={styles.cardTopRow}>
@@ -81,6 +129,36 @@ const Dashboard: React.FC = () => {
                 ? 'Tap to manage your schedule'
                 : 'Heart Specialist | Video Call'}
             </Text>
+          </View>
+        </View>
+
+        {/* Analytics Chart */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Analytics Overview</Text>
+          <View style={styles.card}>
+            <LineChart
+              data={chartData}
+              width={Dimensions.get('window').width - 40}
+              height={220}
+              chartConfig={{
+                backgroundColor: '#ffffff',
+                backgroundGradientFrom: '#ffffff',
+                backgroundGradientTo: '#ffffff',
+                decimalPlaces: 0,
+                color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
+                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                style: {
+                  borderRadius: 16,
+                },
+                propsForDots: {
+                  r: '6',
+                  strokeWidth: '2',
+                  stroke: '#2F80ED',
+                },
+              }}
+              bezier
+              style={styles.chart}
+            />
           </View>
         </View>
       </ScrollView>
@@ -106,10 +184,23 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   headerText: {
     color: '#DDE9FF',
     fontSize: 14,
     fontFamily: 'Inter-Regular',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
   },
   userName: {
     color: 'white',
@@ -165,6 +256,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
   },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  actionButton: {
+    alignItems: 'center',
+    width: '30%',
+  },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E8F0FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  actionText: {
+    fontSize: 12,
+    fontFamily: 'Inter-Medium',
+    color: '#2F80ED',
+    textAlign: 'center',
+  },
   section: {
     marginTop: 30,
     paddingHorizontal: 20,
@@ -201,4 +317,5 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#666',
   },
+  chart: {}
 });

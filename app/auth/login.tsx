@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.sm,
   },
   actions: {
-    marginTop: Spacing.xl,
+    marginTop: Spacing.lg,
   },
   primaryButton: {
     backgroundColor: Colors.primary[500],
