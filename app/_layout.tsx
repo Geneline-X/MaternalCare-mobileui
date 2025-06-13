@@ -1,6 +1,4 @@
-import { useEffect } from 'react';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { SplashScreen } from 'expo-router';
 import {
@@ -16,13 +14,48 @@ import {
   Poppins_700Bold,
 } from '@expo-google-fonts/poppins';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
-import { AuthProvider } from '../contexts/AuthContext';
+import * as SecureStore from 'expo-secure-store';
+import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import { View, Text, ActivityIndicator } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  useFrameworkReady();
+// This component will handle the auth state and routing
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { isLoaded, isSignedIn } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+  const [isReady, setIsReady] = useState(false);
 
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!isSignedIn && !inAuthGroup) {
+      router.replace('/(auth)');
+    } else if (isSignedIn && inAuthGroup) {
+      router.replace('/(tabs)');
+    }
+    
+    setIsReady(true);
+  }, [isSignedIn, segments, isLoaded]);
+
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+
+  return <>{children}</>;
+}
+
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     'Inter-Regular': Inter_400Regular,
     'Inter-Medium': Inter_500Medium,
@@ -40,18 +73,41 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
+  useFrameworkReady();
+
+  const tokenCache = {
+    async getToken(key: string) {
+      try {
+        return SecureStore.getItemAsync(key);
+      } catch (err) {
+        return null;
+      }
+    },
+    async saveToken(key: string, value: string) {
+      try {
+        await SecureStore.setItemAsync(key, value);
+      } catch (err) {
+        return;
+      }
+    },
+  };
+
+  // Don't render anything until fonts are loaded
   if (!fontsLoaded && !fontError) {
     return null;
   }
 
   return (
-    <AuthProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="auth" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </AuthProvider>
+    <ClerkProvider 
+      publishableKey={process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY || ''} 
+      tokenCache={tokenCache}
+    >
+      <AuthProvider>
+        <StatusBar style="auto" />
+        <Slot />
+      </AuthProvider>
+    </ClerkProvider>
   );
 }
+
+export default RootLayout;

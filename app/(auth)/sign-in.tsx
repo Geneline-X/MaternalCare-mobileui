@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+"use client"
+
+import { useState } from "react"
 import {
   View,
   Text,
@@ -9,45 +11,56 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { ArrowLeft, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
-import { useAuth } from '../../contexts/AuthContext';
-import { Colors } from '../../constants/colors';
-import { Spacing, BorderRadius, Shadows } from '../../constants/spacing';
+} from "react-native"
+import { useRouter } from "expo-router"
+import { useSignIn } from "@clerk/clerk-expo"
+import { ArrowLeft, Mail, Lock, Eye, EyeOff } from "lucide-react-native"
+import { Colors } from "../../constants/colors"
+import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
 
-export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
-  const router = useRouter();
+export default function SignIn() {
+  const { signIn, setActive, isLoaded } = useSignIn()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
 
-  const handleLogin = async () => {
+  const handleSignIn = async () => {
+    if (!isLoaded) return
+
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
+      Alert.alert("Error", "Please fill in all fields")
+      return
     }
 
-    setIsLoading(true);
+    setIsLoading(true)
     try {
-      await login(email, password);
-      router.replace('/(tabs)');
-    } catch (error) {
-      Alert.alert('Error', 'Invalid email or password');
+      const completeSignIn = await signIn.create({
+        identifier: email,
+        password,
+      })
+
+      if (completeSignIn.status === "complete") {
+        await setActive({ session: completeSignIn.createdSessionId })
+        router.replace("/(tabs)")
+      } else {
+        console.log(JSON.stringify(completeSignIn, null, 2))
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err.errors?.[0]?.message || "Sign in failed")
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <ArrowLeft size={24} color={Colors.neutral[600]} />
+          </TouchableOpacity>
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>Sign in to your account</Text>
         </View>
@@ -81,9 +94,7 @@ export default function Login() {
                 secureTextEntry={!showPassword}
                 autoComplete="password"
               />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-              >
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                 {showPassword ? (
                   <EyeOff size={20} color={Colors.neutral[400]} />
                 ) : (
@@ -96,22 +107,20 @@ export default function Login() {
 
         <View style={styles.actions}>
           <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleLogin}
+            style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
+            onPress={handleSignIn}
+            disabled={isLoading}
           >
-            <Text style={styles.primaryButtonText}>Sign In</Text>
+            <Text style={styles.primaryButtonText}>{isLoading ? "Signing In..." : "Sign In"}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => router.push('/auth/register')}
-          >
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push("./sign-up")}>
             <Text style={styles.secondaryButtonText}>Create Account</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
@@ -127,15 +136,19 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: Spacing.xxl,
   },
+  backButton: {
+    alignSelf: "flex-start",
+    marginBottom: Spacing.lg,
+  },
   title: {
     fontSize: 28,
-    fontFamily: 'Poppins-Bold',
+    fontFamily: "Poppins-Bold",
     color: Colors.neutral[800],
     marginBottom: Spacing.sm,
   },
   subtitle: {
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     color: Colors.neutral[600],
   },
   form: {
@@ -146,13 +159,13 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontFamily: 'Inter-Medium',
+    fontFamily: "Inter-Medium",
     color: Colors.neutral[700],
     marginBottom: Spacing.sm,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderColor: Colors.neutral[200],
     borderRadius: BorderRadius.lg,
@@ -163,7 +176,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     color: Colors.neutral[800],
     marginLeft: Spacing.sm,
   },
@@ -174,25 +187,28 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary[500],
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: Spacing.md,
     ...Shadows.md,
   },
+  primaryButtonDisabled: {
+    backgroundColor: Colors.neutral[300],
+  },
   primaryButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: "Inter-SemiBold",
     color: Colors.white,
   },
   secondaryButton: {
     backgroundColor: Colors.neutral[200],
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
-    alignItems: 'center',
+    alignItems: "center",
     ...Shadows.sm,
   },
   secondaryButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: "Inter-SemiBold",
     color: Colors.neutral[800],
   },
-});
+})

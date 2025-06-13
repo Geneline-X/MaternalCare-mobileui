@@ -1,10 +1,21 @@
-import { Tabs } from 'expo-router';
-import { Home, Users, ClipboardList, MessageCircle, Settings } from 'lucide-react-native';
-import { useAuth } from '../../contexts/AuthContext';
-import { Colors } from '../../constants/colors';
+"use client"
+
+import { Redirect, Tabs } from "expo-router"
+import { Home, Users, ClipboardList, MessageCircle, Settings } from "lucide-react-native"
+import { useAuth, useUser } from "@clerk/clerk-expo"
+import { Colors } from "../../constants/colors"
 
 export default function TabLayout() {
-  const { user } = useAuth();
+  const { isSignedIn } = useAuth()
+  const { user } = useUser()
+
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)" />
+  }
+
+  // For now, we'll assume all users are doctors since we don't have role management set up
+  // In a real app, you'd store user roles in Clerk's public metadata
+  const isDoctor = true
 
   return (
     <Tabs
@@ -22,40 +33,34 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontFamily: 'Inter-Medium',
+          fontFamily: "Inter-Medium",
         },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ size, color }) => (
-            <Home size={size} color={color} />
-          ),
+          title: "Dashboard",
+          tabBarIcon: ({ size, color }) => <Home size={size} color={color} />,
         }}
       />
-      
-      {user?.role === 'doctor' && (
+
+      {isDoctor && (
         <Tabs.Screen
           name="patients"
           options={{
-            title: 'Patients',
-            tabBarIcon: ({ size, color }) => (
-              <Users size={size} color={color} />
-            ),
+            title: "Patients",
+            tabBarIcon: ({ size, color }) => <Users size={size} color={color} />,
           }}
         />
       )}
 
-      {user?.role === 'doctor' && (
+      {isDoctor && (
         <Tabs.Screen
           name="forms"
           options={{
-            title: 'Forms',
-            tabBarIcon: ({ size, color }) => (
-              <ClipboardList size={size} color={color} />
-            ),
+            title: "Forms",
+            tabBarIcon: ({ size, color }) => <ClipboardList size={size} color={color} />,
           }}
         />
       )}
@@ -63,12 +68,26 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chat"
         options={{
-          title: 'Chat',
-          tabBarIcon: ({ size, color }) => (
-            <MessageCircle size={size} color={color} />
-          ),
+          title: "Chat",
+          tabBarIcon: ({ size, color }) => <MessageCircle size={size} color={color} />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: "Notifications",
+          tabBarIcon: ({ size, color }) => <MessageCircle size={size} color={color} />,
+        }}
+      />
+
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ size, color }) => <Settings size={size} color={color} />,
         }}
       />
     </Tabs>
-  );
+  )
 }

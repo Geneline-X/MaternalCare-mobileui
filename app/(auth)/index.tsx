@@ -1,18 +1,20 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Heart, Shield, Users } from 'lucide-react-native';
-import { Colors } from '../../constants/colors';
-import { Spacing, BorderRadius, Shadows } from '../../constants/spacing';
+"use client"
+import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native"
+import { useRouter } from "expo-router"
+import { Heart, Shield, Users } from "lucide-react-native"
+import { Colors } from "../../constants/colors"
+import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
 
 export default function AuthIndex() {
-  const router = useRouter();
+  const router = useRouter()
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Image
-          source={{ uri: 'https://images.pexels.com/photos/5215024/pexels-photo-5215024.jpeg?auto=compress&cs=tinysrgb&w=400&h=300&fit=crop' }}
+          source={{
+            uri: "https://images.pexels.com/photos/5215024/pexels-photo-5215024.jpeg?auto=compress&cs=tinysrgb&w=400&h=300&fit=crop",
+          }}
           style={styles.heroImage}
         />
         <View style={styles.overlay}>
@@ -39,23 +41,17 @@ export default function AuthIndex() {
         </View>
 
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => router.push('/auth/login')}
-          >
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push("./sign-in")}>
             <Text style={styles.primaryButtonText}>Sign In</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => router.push('/auth/register')}
-          >
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push("./sign-up")}>
             <Text style={styles.secondaryButtonText}>Create Account</Text>
           </TouchableOpacity>
         </View>
       </View>
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
@@ -64,33 +60,33 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   header: {
-    height: '50%',
-    position: 'relative',
+    height: "50%",
+    position: "relative",
   },
   heroImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: Spacing.lg,
   },
   title: {
     fontSize: 32,
-    fontFamily: 'Poppins-Bold',
+    fontFamily: "Poppins-Bold",
     color: Colors.white,
     marginTop: Spacing.md,
-    textAlign: 'center',
+    textAlign: "center",
   },
   subtitle: {
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     color: Colors.white,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: Spacing.sm,
     opacity: 0.9,
   },
@@ -98,23 +94,23 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xl,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   features: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
     marginVertical: Spacing.xl,
   },
   feature: {
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
   },
   featureText: {
     fontSize: 12,
-    fontFamily: 'Inter-Medium',
+    fontFamily: "Inter-Medium",
     color: Colors.neutral[600],
     marginTop: Spacing.sm,
-    textAlign: 'center',
+    textAlign: "center",
   },
   actions: {
     gap: Spacing.md,
@@ -124,12 +120,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.lg,
-    alignItems: 'center',
+    alignItems: "center",
     ...Shadows.md,
   },
   primaryButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: "Inter-SemiBold",
     color: Colors.white,
   },
   secondaryButton: {
@@ -137,13 +133,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.xl,
     borderRadius: BorderRadius.lg,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
     borderColor: Colors.neutral[200],
   },
   secondaryButtonText: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: "Inter-SemiBold",
     color: Colors.neutral[700],
   },
-});
+})
