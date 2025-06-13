@@ -49,7 +49,7 @@ const Dashboard: React.FC = () => {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
-            <Text style={styles.headerText}>Welcome back,</Text>
+          <Text style={styles.headerText}>Welcome back,</Text>
             <View style={styles.headerButtons}>
               <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/notifications')}>
                 <Ionicons name="notifications-outline" size={24} color="white" />
@@ -248,74 +248,83 @@ const styles = StyleSheet.create({
     backgroundColor: '#F2F4F7',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 8,
   },
   searchPlaceholder: {
+    color: '#aaa',
     marginLeft: 8,
-    color: '#999',
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
   },
   quickActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginTop: 20,
+    marginHorizontal: 20,
+    marginTop: 24,
   },
   actionButton: {
     alignItems: 'center',
-    width: '30%',
-  },
-  actionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#E8F0FE',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionText: {
-    fontSize: 12,
-    fontFamily: 'Inter-Medium',
-    color: '#2F80ED',
-    textAlign: 'center',
-  },
-  section: {
-    marginTop: 30,
-    paddingHorizontal: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Poppins-SemiBold',
-    marginBottom: 16,
-    color: '#333',
-  },
-  card: {
     backgroundColor: '#fff',
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 12,
+    width: '30%',
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 4,
+  },
+  actionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F7FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  actionText: {
+    fontSize: 12,
+    color: '#333',
+    textAlign: 'center',
+  },
+  section: {
+    marginTop: 24,
+    paddingHorizontal: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
   },
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   cardTitle: {
     fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
     marginLeft: 12,
-    fontFamily: 'Poppins-Medium',
-    color: '#2F80ED',
   },
   cardSubtext: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
     color: '#666',
+    marginLeft: 36,
   },
-  chart: {}
-});
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+}); 
