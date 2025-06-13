@@ -424,4 +424,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
   },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  label: {
+    fontSize: 14,
+    color: Colors.neutral[700],
+    fontFamily: 'Inter-Regular',
+  },
+  value: {
+    fontSize: 14,
+    color: Colors.neutral[900],
+    fontFamily: 'Inter-Medium',
+  },
 });

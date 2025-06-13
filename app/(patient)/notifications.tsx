@@ -15,6 +15,9 @@ import {
   Heart,
   CheckCircle,
   Clock,
+  Baby,
+  Stethoscope,
+  Pill,
 } from 'lucide-react-native';
 import { Colors } from '../../constants/colors';
 import { Spacing, BorderRadius, Shadows } from '../../constants/spacing';
@@ -23,8 +26,8 @@ const mockNotifications = [
   {
     id: '1',
     type: 'appointment',
-    title: 'Upcoming Appointment',
-    message: 'You have an appointment with Dr. Sarah Williams tomorrow at 10:30 AM',
+    title: 'Upcoming Prenatal Visit',
+    message: 'Your next prenatal checkup is scheduled for tomorrow at 10:30 AM with Dr. Sarah Williams',
     time: '2 hours ago',
     isRead: false,
     actionUrl: '/appointments/123',
@@ -32,38 +35,38 @@ const mockNotifications = [
   {
     id: '2',
     type: 'reminder',
-    title: 'Medication Reminder',
-    message: 'Time to take your prenatal vitamins',
+    title: 'Prenatal Vitamin Reminder',
+    message: 'Time to take your prenatal vitamins. Remember to take them with food.',
     time: '4 hours ago',
     isRead: false,
     actionUrl: null,
   },
   {
     id: '3',
-    type: 'alert',
-    title: 'High Blood Pressure Alert',
-    message: 'Your recent blood pressure reading (145/90) is higher than normal. Please contact your doctor.',
-    time: '1 day ago',
-    isRead: true,
-    actionUrl: '/vitals/bp',
-  },
-  {
-    id: '4',
-    type: 'info',
-    title: 'Week 28 Pregnancy Milestone',
+    type: 'milestone',
+    title: 'Pregnancy Milestone',
     message: 'Congratulations! You\'ve reached week 28 of your pregnancy. Your baby is now the size of an eggplant.',
-    time: '2 days ago',
+    time: '1 day ago',
     isRead: true,
     actionUrl: '/pregnancy/milestones',
   },
   {
-    id: '5',
-    type: 'appointment',
-    title: 'Lab Results Available',
+    id: '4',
+    type: 'test',
+    title: 'Test Results Available',
     message: 'Your recent blood test results are now available in your patient portal.',
-    time: '3 days ago',
+    time: '2 days ago',
     isRead: true,
     actionUrl: '/lab-results/456',
+  },
+  {
+    id: '5',
+    type: 'education',
+    title: 'Pregnancy Education',
+    message: 'New article available: "Understanding Your Third Trimester Changes"',
+    time: '3 days ago',
+    isRead: true,
+    actionUrl: '/education/third-trimester',
   },
 ];
 
@@ -83,11 +86,13 @@ export default function Notifications() {
       case 'appointment':
         return <Calendar size={20} color={Colors.primary[600]} />;
       case 'reminder':
-        return <Clock size={20} color={Colors.warning[600]} />;
-      case 'alert':
-        return <AlertCircle size={20} color={Colors.error[600]} />;
-      case 'info':
-        return <Info size={20} color={Colors.success[600]} />;
+        return <Pill size={20} color={Colors.warning[600]} />;
+      case 'milestone':
+        return <Baby size={20} color={Colors.success[600]} />;
+      case 'test':
+        return <Stethoscope size={20} color={Colors.error[600]} />;
+      case 'education':
+        return <Info size={20} color={Colors.primary[600]} />;
       default:
         return <Bell size={20} color={Colors.neutral[600]} />;
     }
@@ -99,10 +104,12 @@ export default function Notifications() {
         return Colors.primary[50];
       case 'reminder':
         return Colors.warning[50];
-      case 'alert':
-        return Colors.error[50];
-      case 'info':
+      case 'milestone':
         return Colors.success[50];
+      case 'test':
+        return Colors.error[50];
+      case 'education':
+        return Colors.primary[50];
       default:
         return Colors.neutral[50];
     }
@@ -187,7 +194,7 @@ export default function Notifications() {
 
         <View style={styles.quickStat}>
           <View style={[styles.quickStatIcon, { backgroundColor: Colors.warning[100] }]}>
-            <Clock size={16} color={Colors.warning[600]} />
+            <Pill size={16} color={Colors.warning[600]} />
           </View>
           <Text style={styles.quickStatValue}>
             {notifications.filter(n => n.type === 'reminder').length}
@@ -196,13 +203,13 @@ export default function Notifications() {
         </View>
 
         <View style={styles.quickStat}>
-          <View style={[styles.quickStatIcon, { backgroundColor: Colors.error[100] }]}>
-            <AlertCircle size={16} color={Colors.error[600]} />
+          <View style={[styles.quickStatIcon, { backgroundColor: Colors.success[100] }]}>
+            <Baby size={16} color={Colors.success[600]} />
           </View>
           <Text style={styles.quickStatValue}>
-            {notifications.filter(n => n.type === 'alert').length}
+            {notifications.filter(n => n.type === 'milestone').length}
           </Text>
-          <Text style={styles.quickStatLabel}>Alerts</Text>
+          <Text style={styles.quickStatLabel}>Milestones</Text>
         </View>
       </View>
 
@@ -369,4 +376,4 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.sm,
     marginTop: Spacing.sm,
   },
-});
+}); 

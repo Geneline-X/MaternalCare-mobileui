@@ -86,19 +86,28 @@ const Dashboard: React.FC = () => {
 
         {/* Quick Actions */}
         <View style={styles.quickActions}>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/(doctor)/add-patient')}
+          >
             <View style={styles.actionIcon}>
               <Ionicons name="person-add-outline" size={24} color="#2F80ED" />
             </View>
             <Text style={styles.actionText}>Add Patient</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/(doctor)/add-pregnancy')}
+          >
             <View style={styles.actionIcon}>
               <Ionicons name="heart-outline" size={24} color="#2F80ED" />
             </View>
             <Text style={styles.actionText}>Add Pregnancy</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/(doctor)/schedule-visit')}
+          >
             <View style={styles.actionIcon}>
               <Ionicons name="calendar-outline" size={24} color="#2F80ED" />
             </View>
