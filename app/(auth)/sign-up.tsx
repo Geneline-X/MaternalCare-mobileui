@@ -14,7 +14,7 @@ import {
 } from "react-native"
 import { useRouter } from "expo-router"
 import { useSignUp } from "@clerk/clerk-expo"
-import { ArrowLeft, User, Mail, Lock } from "lucide-react-native"
+import { ArrowLeft, User, Mail, Lock, Stethoscope, User as UserIcon } from "lucide-react-native"
 import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
 
@@ -25,6 +25,7 @@ export default function SignUp() {
     lastName: "",
     email: "",
     password: "",
+    role: "patient" as 'patient' | 'doctor'
   })
   const [pendingVerification, setPendingVerification] = useState(false)
   const [code, setCode] = useState("")
@@ -43,6 +44,11 @@ export default function SignUp() {
       Alert.alert("Error", "Please fill in all required fields");
       return;
     }
+    
+    if (!formData.role) {
+      Alert.alert("Error", "Please select an account type");
+      return;
+    }
 
     if (!validateEmail(formData.email)) {
       Alert.alert("Error", "Please enter a valid email address");
@@ -54,15 +60,20 @@ export default function SignUp() {
       return;
     }
 
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      // Create the user with all required information
+      // Create the user with all data in unsafeMetadata
       await signUp.create({
         emailAddress: formData.email.trim().toLowerCase(),
         password: formData.password,
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
+        unsafeMetadata: {
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          role: formData.role
+        }
       });
+
+      // No need for a separate update call
 
       // Prepare email verification
       await signUp.prepareEmailAddressVerification({ 
@@ -103,8 +114,15 @@ export default function SignUp() {
       })
 
       if (completeSignUp.status === "complete") {
-        await setActive({ session: completeSignUp.createdSessionId })
-        router.replace("/(tabs)")
+        // Get the user role from the sign up data
+        const userRole = completeSignUp.createdUserId ? 
+          (completeSignUp.unsafeMetadata?.role as string) || 'patient' : 'patient';
+        
+        await setActive({ session: completeSignUp.createdSessionId });
+        
+        // Redirect based on role
+        const redirectPath = userRole === 'doctor' ? '/(doctor)/dashboard' : '/(patient)/home';
+        router.replace(redirectPath as any);
       } else {
         console.log(JSON.stringify(completeSignUp, null, 2))
       }
@@ -160,7 +178,37 @@ export default function SignUp() {
             <ArrowLeft size={24} color={Colors.neutral[600]} />
           </TouchableOpacity>
           <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join MaternalCare today</Text>
+          <Text style={styles.subtitle}>Fill in your details to get started</Text>
+          
+          <View style={styles.roleContainer}>
+            <Text style={styles.roleLabel}>I am a</Text>
+            <View style={styles.roleButtons}>
+              <TouchableOpacity 
+                style={[
+                  styles.roleButton, 
+                  formData.role === 'patient' && styles.roleButtonActive
+                ]}
+                onPress={() => setFormData({...formData, role: 'patient'})}
+              >
+                <UserIcon size={20} color={formData.role === 'patient' ? Colors.white : Colors.primary[600]} />
+                <Text style={[styles.roleButtonText, formData.role === 'patient' && styles.roleButtonTextActive]}>
+                  Patient
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.roleButton, 
+                  formData.role === 'doctor' && styles.roleButtonActive
+                ]}
+                onPress={() => setFormData({...formData, role: 'doctor'})}
+              >
+                <Stethoscope size={20} color={formData.role === 'doctor' ? Colors.white : Colors.primary[600]} />
+                <Text style={[styles.roleButtonText, formData.role === 'doctor' && styles.roleButtonTextActive]}>
+                  Doctor
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
 
         <View style={styles.form}>
@@ -268,8 +316,48 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    fontFamily: "Inter-Regular",
+    color: Colors.neutral[500],
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  roleContainer: {
+    marginBottom: 24,
+    width: '100%',
+  },
+  roleLabel: {
+    fontSize: 14,
     color: Colors.neutral[600],
+    marginBottom: 8,
+    fontFamily: 'Inter-Medium',
+  },
+  roleButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  roleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.neutral[300],
+    backgroundColor: Colors.white,
+  },
+  roleButtonActive: {
+    backgroundColor: Colors.primary[600],
+    borderColor: Colors.primary[600],
+  },
+  roleButtonText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+    color: Colors.neutral[800],
+  },
+  roleButtonTextActive: {
+    color: Colors.white,
   },
   form: {
     flex: 1,

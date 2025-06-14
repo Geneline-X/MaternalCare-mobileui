@@ -15,34 +15,75 @@ import {
 } from '@expo-google-fonts/poppins';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import * as SecureStore from 'expo-secure-store';
-import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
+import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useUserRole } from '@/hooks/useUserRole';
 
 SplashScreen.preventAutoHideAsync();
 
-// This component will handle the auth state and routing
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+  const { role: userRole } = useUserRole();
   const segments = useSegments();
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
+  
+  // Log the current authentication state for debugging
+  useEffect(() => {
+    console.log('Auth state changed:', { isLoaded, isSignedIn, userRole });
+  }, [isLoaded, isSignedIn, userRole]);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded) {
+      console.log('Auth not loaded yet');
+      return;
+    }
 
-    const inAuthGroup = segments[0] === '(auth)';
+    const currentSegment = segments[0] as string | undefined;
+    const inAuthGroup = currentSegment === '(auth)';
+    const inDoctorGroup = currentSegment === '(doctor)';
+    const inPatientGroup = currentSegment === '(patient)';
+    const inTabsGroup = currentSegment === '(tabs)';
 
-    if (!isSignedIn && !inAuthGroup) {
-      router.replace('/(auth)');
-    } else if (isSignedIn && inAuthGroup) {
-      router.replace('/(tabs)');
+    console.log('Current segment:', currentSegment);
+    console.log('Auth state:', { isSignedIn, userRole });
+
+    if (!isSignedIn) {
+      if (!inAuthGroup) {
+        console.log('Not signed in, redirecting to sign-in');
+        router.replace('/(auth)/sign-in');
+      }
+    } else {
+      // User is signed in
+      if (inAuthGroup) {
+        // If in auth group but signed in, redirect based on role
+        const redirectPath = userRole === 'doctor' ? '/(doctor)/dashboard' : '/(patient)/home';
+        console.log('In auth group, redirecting to:', redirectPath);
+        router.replace(redirectPath as any);
+      } else if (userRole === 'doctor' && !inDoctorGroup && !inTabsGroup) {
+        // If doctor but not in doctor group or tabs, redirect to doctor dashboard
+        console.log('Doctor user, redirecting to doctor dashboard');
+        router.replace('/(doctor)/dashboard' as any);
+      } else if (userRole === 'patient' && !inPatientGroup && !inTabsGroup) {
+        // If patient but not in patient group or tabs, redirect to patient home
+        console.log('Patient user, redirecting to patient home');
+        router.replace('/(patient)/home' as any);
+      } else if (inTabsGroup) {
+        // If in tabs group, redirect based on role
+        const redirectPath = userRole === 'doctor' ? '/(doctor)/dashboard' : '/(patient)/home';
+        console.log('In tabs group, redirecting to:', redirectPath);
+        router.replace(redirectPath as any);
+      }
     }
     
     setIsReady(true);
-  }, [isSignedIn, segments, isLoaded]);
+  }, [isSignedIn, segments, isLoaded, user]);
 
+  // Show loading indicator while checking auth state
   if (!isReady) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -50,7 +91,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       </View>
     );
   }
-
 
   return <>{children}</>;
 }

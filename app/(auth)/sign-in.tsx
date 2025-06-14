@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import {
   View,
   Text,
@@ -11,12 +11,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from "react-native"
 import { useRouter } from "expo-router"
 import { useSignIn } from "@clerk/clerk-expo"
 import { ArrowLeft, Mail, Lock, Eye, EyeOff } from "lucide-react-native"
 import { Colors } from "../../constants/colors"
-import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
+import { Spacing, BorderRadius } from "../../constants/spacing"
 
 export default function SignIn() {
   const { signIn, setActive, isLoaded } = useSignIn()
@@ -25,32 +26,70 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  const passwordInput = useRef<TextInput>(null)
 
   const handleSignIn = async () => {
-    if (!isLoaded) return
-
-    if (!email || !password) {
-      Alert.alert("Error", "Please fill in all fields")
-      return
+    if (!isLoaded) {
+      Alert.alert("Error", "Authentication service is not ready yet");
+      return;
     }
 
-    setIsLoading(true)
-    try {
-      const completeSignIn = await signIn.create({
-        identifier: email,
-        password,
-      })
+    // Basic validation
+    if (!email || !email.includes('@')) {
+      Alert.alert("Error", "Please enter a valid email address");
+      return;
+    }
+    
+    if (!password || password.length < 6) {
+      Alert.alert("Error", "Password must be at least 6 characters long");
+      return;
+    }
 
-      if (completeSignIn.status === "complete") {
-        await setActive({ session: completeSignIn.createdSessionId })
-        router.replace("/(tabs)")
+    setIsLoading(true);
+    
+    try {
+      // Attempt to sign in
+      const result = await signIn.create({
+        identifier: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (result.status === 'complete') {
+        // Set the active session
+        await setActive({ session: result.createdSessionId });
+        
+        // Show success message
+        Alert.alert("Success", "You have been signed in successfully!");
+        
+        // The AuthProvider will handle the redirection based on the user's role
+        // We'll use a small delay to ensure the session is fully established
+        setTimeout(() => {
+          // Fallback redirection in case the AuthProvider doesn't catch it
+          router.replace('/(tabs)');
+        }, 1000);
+        
+        return;
       } else {
-        console.log(JSON.stringify(completeSignIn, null, 2))
+        // Handle other statuses if needed
+        console.log('Sign in status:', result.status);
       }
     } catch (err: any) {
-      Alert.alert("Error", err.errors?.[0]?.message || "Sign in failed")
+      console.error('Sign in error:', err);
+      
+      // More specific error messages based on error type
+      let errorMessage = "Sign in failed. Please try again.";
+      
+      if (err.errors?.[0]?.code === 'form_identifier_not_found') {
+        errorMessage = "No account found with this email address.";
+      } else if (err.errors?.[0]?.code === 'form_password_incorrect') {
+        errorMessage = "Incorrect password. Please try again.";
+      } else if (err.errors?.[0]?.message) {
+        errorMessage = err.errors[0].message;
+      }
+      
+      Alert.alert("Error", errorMessage);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
@@ -66,56 +105,96 @@ export default function SignIn() {
         </View>
 
         <View style={styles.form}>
+          {/* Email Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Email</Text>
             <View style={styles.inputContainer}>
-              <Mail size={20} color={Colors.neutral[400]} />
+              <Mail size={20} color={Colors.neutral[400]} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
+                placeholder="Enter your email"
+                placeholderTextColor={Colors.neutral[400]}
                 value={email}
                 onChangeText={setEmail}
-                placeholder="Enter your email"
-                keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
+                keyboardType="email-address"
+                returnKeyType="next"
+                onSubmitEditing={() => passwordInput.current?.focus()}
               />
             </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
+          {/* Password Input */}
+          <View style={[styles.inputGroup, { marginTop: Spacing.md }]}>
+            <View style={styles.passwordHeader}>
+              <Text style={styles.label}>Password</Text>
+              <TouchableOpacity onPress={() => {}}>
+                <Text style={styles.forgotPassword}>Forgot Password?</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.inputContainer}>
-              <Lock size={20} color={Colors.neutral[400]} />
+              <Lock size={20} color={Colors.neutral[400]} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                ref={passwordInput}
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Enter your password"
+                placeholderTextColor={Colors.neutral[400]}
                 value={password}
                 onChangeText={setPassword}
-                placeholder="Enter your password"
                 secureTextEntry={!showPassword}
-                autoComplete="password"
+                returnKeyType="done"
+                onSubmitEditing={handleSignIn}
               />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <TouchableOpacity
+                style={styles.eyeIcon}
+                onPress={() => setShowPassword(!showPassword)}
+              >
                 {showPassword ? (
-                  <EyeOff size={20} color={Colors.neutral[400]} />
+                  <EyeOff size={20} color={Colors.neutral[500]} />
                 ) : (
-                  <Eye size={20} color={Colors.neutral[400]} />
+                  <Eye size={20} color={Colors.neutral[500]} />
                 )}
               </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        <View style={styles.actions}>
+          {/* Sign In Button */}
           <TouchableOpacity
-            style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
+            style={[styles.button, isLoading && styles.buttonDisabled]}
             onPress={handleSignIn}
             disabled={isLoading}
           >
-            <Text style={styles.primaryButtonText}>{isLoading ? "Signing In..." : "Sign In"}</Text>
+            {isLoading ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <Text style={styles.buttonText}>Sign In</Text>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.push("./sign-up")}>
-            <Text style={styles.secondaryButtonText}>Create Account</Text>
+          {/* Sign Up Link */}
+          <View style={styles.signUpContainer}>
+            <Text style={styles.signUpText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/(auth)/sign-up')}>
+              <Text style={styles.signUpLink}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Divider */}
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>OR</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        {/* Social Login Buttons */}
+        <View style={styles.socialButtonsContainer}>
+          <TouchableOpacity style={styles.socialButton}>
+            <Text style={styles.socialButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.socialButton, { marginTop: Spacing.sm }]}>
+            <Text style={styles.socialButtonText}>Continue with Apple</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -130,85 +209,137 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: 60,
+    padding: Spacing.lg,
+    paddingTop: Spacing.xxxl,
   },
   header: {
-    marginBottom: Spacing.xxl,
+    marginBottom: Spacing.xl,
   },
   backButton: {
-    alignSelf: "flex-start",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.neutral[100],
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: Spacing.lg,
   },
   title: {
     fontSize: 28,
-    fontFamily: "Poppins-Bold",
-    color: Colors.neutral[800],
-    marginBottom: Spacing.sm,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.neutral[900],
+    marginBottom: Spacing.xs,
   },
   subtitle: {
     fontSize: 16,
-    fontFamily: "Inter-Regular",
+    fontFamily: 'Poppins_400Regular',
     color: Colors.neutral[600],
   },
   form: {
-    flex: 1,
+    marginBottom: Spacing.xl,
   },
   inputGroup: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   label: {
     fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: Colors.neutral[700],
-    marginBottom: Spacing.sm,
+    fontFamily: 'Poppins_500Medium',
+    color: Colors.neutral[800],
+    marginBottom: Spacing.xs,
   },
   inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.neutral[50],
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.neutral[200],
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.neutral[50],
+  },
+  inputIcon: {
+    marginRight: Spacing.sm,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    color: Colors.neutral[800],
-    marginLeft: Spacing.sm,
+    height: 48,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.neutral[900],
   },
-  actions: {
+  eyeIcon: {
+    padding: Spacing.sm,
+  },
+  passwordHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  forgotPassword: {
+    fontSize: 14,
+    fontFamily: 'Poppins_500Medium',
+    color: Colors.primary[600],
+  },
+  button: {
+    backgroundColor: Colors.primary[600],
+    borderRadius: BorderRadius.md,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginTop: Spacing.lg,
   },
-  primaryButton: {
-    backgroundColor: Colors.primary[500],
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    alignItems: "center",
-    marginBottom: Spacing.md,
-    ...Shadows.md,
+  buttonDisabled: {
+    opacity: 0.7,
   },
-  primaryButtonDisabled: {
-    backgroundColor: Colors.neutral[300],
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontFamily: "Inter-SemiBold",
+  buttonText: {
     color: Colors.white,
-  },
-  secondaryButton: {
-    backgroundColor: Colors.neutral[200],
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    alignItems: "center",
-    ...Shadows.sm,
-  },
-  secondaryButtonText: {
     fontSize: 16,
-    fontFamily: "Inter-SemiBold",
+    fontFamily: 'Poppins_600SemiBold',
+  },
+  signUpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: Spacing.lg,
+  },
+  signUpText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.neutral[600],
+  },
+  signUpLink: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.primary[600],
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: Spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.neutral[200],
+  },
+  dividerText: {
+    marginHorizontal: Spacing.md,
+    fontSize: 12,
+    fontFamily: 'Poppins_500Medium',
+    color: Colors.neutral[500],
+  },
+  socialButtonsContainer: {
+    marginBottom: Spacing.xl,
+  },
+  socialButton: {
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.neutral[200],
+    borderRadius: BorderRadius.md,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  socialButtonText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_500Medium',
     color: Colors.neutral[800],
   },
-})
+});
