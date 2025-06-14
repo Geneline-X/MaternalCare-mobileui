@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Image,
   RefreshControl,
   SafeAreaView,
   TouchableOpacity,
@@ -27,7 +26,7 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const isDoctor = (user?.unsafeMetadata?.role as string) === 'doctor';
-  const userName = `${user?.firstName || 'Doctor'} ${user?.lastName || ''}`.trim();
+  const userName = `${user?.firstName || 'Dr. David'} ${user?.lastName || ''}`.trim();
 
   const chartData = {
     labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
@@ -52,17 +51,11 @@ const Dashboard: React.FC = () => {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View>
-              <Text style={styles.greeting}>
-                Hello, {user?.firstName || 'Doctor'}
+              <Text style={styles.userName}>{userName}</Text>
+              <Text style={styles.role}>
+                {isDoctor ? 'Healthcare Provider' : 'Patient'}
               </Text>
-              <Text style={styles.welcomeText}>Welcome back to your dashboard</Text>
             </View>
-            <TouchableOpacity onPress={() => router.push('/doctor/profile' as any)}>
-              <Image
-                source={{ uri: user?.imageUrl || 'https://randomuser.me/api/portraits/lego/1.jpg' }}
-                style={styles.avatar}
-              />
-            </TouchableOpacity>
             <View style={styles.headerButtons}>
               <TouchableOpacity style={styles.headerButton} onPress={() => router.push('/notifications')}>
                 <Ionicons name="notifications-outline" size={24} color="white" />
@@ -72,28 +65,13 @@ const Dashboard: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
-          <Text style={styles.userName}>{userName}</Text>
-          <Text style={styles.role}>
-            {isDoctor ? 'Healthcare Provider' : 'Patient'}
-          </Text>
         </View>
 
-        {/* Rest of the component remains the same */}
-        {/* Avatar and Greeting */}
-        <View style={styles.profileCard}>
-          <Image
-            source={{
-              uri:
-                user?.imageUrl ||
-                'https://images.pexels.com/photos/5215024/pexels-photo-5215024.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop',
-            }}
-            style={styles.avatar}
-          />
-          <View style={styles.profileInfo}>
-            <View style={styles.searchRow}>
-              <Ionicons name="search" size={20} color="#aaa" />
-              <Text style={styles.searchPlaceholder}>Search doctor</Text>
-            </View>
+        {/* Search Bar */}
+        <View style={styles.searchCard}>
+          <View style={styles.searchRow}>
+            <Ionicons name="search" size={20} color="#aaa" />
+            <Text style={styles.searchPlaceholder}>Search doctor</Text>
           </View>
         </View>
 
@@ -160,8 +138,8 @@ const Dashboard: React.FC = () => {
           <View style={styles.card}>
             <LineChart
               data={chartData}
-              width={Dimensions.get('window').width - 40}
-              height={220}
+              width={Dimensions.get('window').width - 80}
+              height={180}
               chartConfig={{
                 backgroundColor: '#ffffff',
                 backgroundGradientFrom: '#ffffff',
@@ -173,7 +151,7 @@ const Dashboard: React.FC = () => {
                   borderRadius: 16,
                 },
                 propsForDots: {
-                  r: '6',
+                  r: '4',
                   strokeWidth: '2',
                   stroke: '#2F80ED',
                 },
@@ -201,21 +179,15 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#2F80ED',
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 40,
     paddingBottom: 30,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
   headerTop: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  headerText: {
-    color: '#DDE9FF',
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
   },
   headerButtons: {
     flexDirection: 'row',
@@ -240,9 +212,7 @@ const styles = StyleSheet.create({
     color: '#A8C3FF',
     fontFamily: 'Inter-Regular',
   },
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  searchCard: {
     backgroundColor: '#fff',
     marginHorizontal: 20,
     padding: 16,
@@ -254,24 +224,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    marginRight: 16,
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  greeting: {
-    fontSize: 16,
-    fontFamily: 'Poppins-Medium',
-    color: '#333',
-  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
     backgroundColor: '#F2F4F7',
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -281,6 +236,11 @@ const styles = StyleSheet.create({
     color: '#aaa',
     marginLeft: 8,
     fontSize: 14,
+  },
+  greeting: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Medium',
+    color: '#333',
   },
   quickActions: {
     flexDirection: 'row',
@@ -348,7 +308,6 @@ const styles = StyleSheet.create({
   cardSubtext: {
     fontSize: 14,
     color: '#666',
-    marginLeft: 36,
   },
   chart: {
     marginVertical: 8,

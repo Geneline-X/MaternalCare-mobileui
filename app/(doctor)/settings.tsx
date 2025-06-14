@@ -376,4 +376,4 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Regular",
     color: Colors.neutral[500],
   },
-})
+}) 

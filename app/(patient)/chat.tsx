@@ -13,7 +13,7 @@ import { useColorScheme } from 'react-native';
 import { Colors } from '../../constants/colors';
 import { Send } from 'lucide-react-native';
 import { Spacing } from '../../constants/spacing';
-import { FontSize } from '@/constants/fontSize';
+import { FontSize } from '../../constants/fontSize';
 
 interface Message {
   id: string;
