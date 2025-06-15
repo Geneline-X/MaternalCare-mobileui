@@ -7,10 +7,6 @@ dist/
 web-build/
 expo-env.d.ts
 
-bun.lock
-
-MaternalCare-mobile-ui.zip
-
 # native
 *.orig.*
 *.jks
