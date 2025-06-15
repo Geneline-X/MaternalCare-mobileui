@@ -1,50 +1,20 @@
-"use client"
-
-import { Stack, useRouter } from "expo-router"
-import { useAuth, useUser } from "@clerk/clerk-expo"
-import { useState, useEffect } from 'react'
-import { View, ActivityIndicator, StyleSheet, ViewStyle } from 'react-native'
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const
-  }
-} as const) as {
-  loading: ViewStyle
-}
+import { Stack } from 'expo-router';
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { ActivityIndicator, View, Text } from 'react-native';
+import { useEffect } from 'react';
 
 export default function AuthLayout() {
-  const { isSignedIn, isLoaded } = useAuth()
-  const { user } = useUser()
-  const router = useRouter()
-  const [hasCheckedAuth, setHasCheckedAuth] = useState(false)
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
+  const { isLoaded: isUserLoaded } = useUser();
 
-  useEffect(() => {
-    if (isLoaded && !hasCheckedAuth) {
-      setHasCheckedAuth(true)
-      if (isSignedIn) {
-        const role = user?.publicMetadata?.role
-        if (role === 'doctor') {
-          router.replace('/(doctor)/dashboard')
-        } else if (role === 'patient') {
-          router.replace('/(patient)/home')
-        } else {
-          router.replace('/(auth)/sign-in')
-        }
-      } else {
-        router.replace('/(auth)/sign-in')
-      }
-    }
-  }, [isLoaded, isSignedIn, user, hasCheckedAuth])
-
-  if (!hasCheckedAuth) {
+  // Show loading state while checking auth
+  if (!isAuthLoaded || !isUserLoaded) {
     return (
-      <View style={styles.loading}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" />
+        <Text style={{ marginTop: 10 }}>Loading...</Text>
       </View>
-    )
+    );
   }
 
   return (
@@ -53,5 +23,5 @@ export default function AuthLayout() {
       <Stack.Screen name="sign-in" />
       <Stack.Screen name="sign-up" />
     </Stack>
-  )
+  );
 }

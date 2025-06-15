@@ -111,19 +111,19 @@ export default function Settings() {
           icon={<User size={20} color={Colors.neutral[600]} />}
           title="Personal Information"
           subtitle="Update your personal details"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/personal-info')}}
         />
         <SettingsItem
           icon={<Lock size={20} color={Colors.neutral[600]} />}
           title="Change Password"
           subtitle="Update your password"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/change-password')}}
         />
         <SettingsItem
           icon={<Shield size={20} color={Colors.neutral[600]} />}
           title="Privacy & Security"
           subtitle="Manage your privacy settings"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/privacy-security')}}
         />
       </SettingsSection>
 
@@ -160,7 +160,7 @@ export default function Settings() {
           icon={<Globe size={20} color={Colors.neutral[600]} />}
           title="Language"
           subtitle="English"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/language')}}
         />
       </SettingsSection>
 
@@ -169,19 +169,19 @@ export default function Settings() {
           icon={<Heart size={20} color={Colors.neutral[600]} />}
           title="Data Sharing"
           subtitle="Manage data sharing preferences"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/data-sharing')}}
         />
         <SettingsItem
           icon={<Smartphone size={20} color={Colors.neutral[600]} />}
           title="Connected Devices"
           subtitle="Manage connected health devices"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/connected-devices')}}
         />
         <SettingsItem
           icon={<Mail size={20} color={Colors.neutral[600]} />}
           title="Consent Management"
           subtitle="View and manage consent forms"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/consent-management')}}
         />
       </SettingsSection>
 
@@ -190,13 +190,13 @@ export default function Settings() {
           icon={<Mail size={20} color={Colors.neutral[600]} />}
           title="Contact Support"
           subtitle="Get help with your account"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/contact-support')}}
         />
         <SettingsItem
           icon={<Shield size={20} color={Colors.neutral[600]} />}
           title="Terms & Privacy"
           subtitle="Read our terms and privacy policy"
-          onPress={() => {}}
+          onPress={() => {router.push('/(doctor)/settings/terms-privacy')}}
         />
       </SettingsSection>
 
