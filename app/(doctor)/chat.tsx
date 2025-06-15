@@ -2,7 +2,6 @@
 import { useState } from "react"
 import type { ChatMessage } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-import CustomBottomNavigation from "../../components/CustomBottomNavigation"
 import {
   View,
   Text,
@@ -173,7 +172,6 @@ const ChatComponent = () => {
         </View>
       </KeyboardAvoidingView>
 
-      <CustomBottomNavigation />
     </SafeAreaView>
   )
 }

@@ -9,7 +9,7 @@ import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
 import type { HealthMetric, HealthStatus, TrendDirection } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-import CustomBottomNavigation from "../../components/CustomBottomNavigation"
+
 
 const mockHealthData: HealthMetric[] = [
   {
@@ -293,7 +293,7 @@ export default function HealthMonitoring() {
         />
       </ScrollView>
 
-      <CustomBottomNavigation />
+   
     </SafeAreaView>
   )
 }

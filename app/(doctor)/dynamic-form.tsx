@@ -8,7 +8,7 @@ import { useToast } from "react-native-toast-notifications"
 import { router } from "expo-router"
 import { Plus } from "lucide-react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import CustomBottomNavigation from "../../components/CustomBottomNavigation"
+
 import { useAuth, useUser } from "@clerk/clerk-expo"
 import { FormTemplate } from "../../types/app"
 
@@ -112,7 +112,7 @@ const fetchForms = () => {
         showsVerticalScrollIndicator={false}
       />
 
-      <CustomBottomNavigation />
+   
     </SafeAreaView>
   )
 }

@@ -6,7 +6,7 @@ import { Plus } from "phosphor-react-native"
 import { Colors } from "@/constants/colors"
 import { useFocusEffect } from "@react-navigation/native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import CustomBottomNavigation from "../../components/CustomBottomNavigation"
+
 import { NativeStackNavigationProp } from "@react-navigation/native-stack"
 import { useNavigation } from "@react-navigation/native"
 
@@ -107,7 +107,7 @@ export default function Patients() {
         showsVerticalScrollIndicator={false}
       />
 
-      <CustomBottomNavigation />
+   
     </SafeAreaView>
   )
 }

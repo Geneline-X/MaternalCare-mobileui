@@ -1,7 +1,18 @@
 "use client"
 
 import React from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Image } from "react-native"
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Switch,
+  Alert,
+  Image,
+  Modal,
+  TextInput,
+} from "react-native"
 import {
   User,
   Lock,
@@ -14,6 +25,8 @@ import {
   Moon,
   Smartphone,
   Mail,
+  X,
+  Save,
 } from "lucide-react-native"
 import { useUser, useClerk } from "@clerk/clerk-expo"
 import { useRouter } from "expo-router"
@@ -27,18 +40,86 @@ export default function Settings() {
   const [notifications, setNotifications] = React.useState(true)
   const [darkMode, setDarkMode] = React.useState(false)
 
-  const handleLogout = () => {
+  // Modal states
+  const [profileModalVisible, setProfileModalVisible] = React.useState(false)
+  const [passwordModalVisible, setPasswordModalVisible] = React.useState(false)
+  const [privacyModalVisible, setPrivacyModalVisible] = React.useState(false)
+  const [languageModalVisible, setLanguageModalVisible] = React.useState(false)
+  const [dataModalVisible, setDataModalVisible] = React.useState(false)
+  const [devicesModalVisible, setDevicesModalVisible] = React.useState(false)
+  const [consentModalVisible, setConsentModalVisible] = React.useState(false)
+  const [supportModalVisible, setSupportModalVisible] = React.useState(false)
+  const [termsModalVisible, setTermsModalVisible] = React.useState(false)
+
+  // Form states
+  const [firstName, setFirstName] = React.useState(user?.firstName || "")
+  const [lastName, setLastName] = React.useState(user?.lastName || "")
+  const [email, setEmail] = React.useState(user?.primaryEmailAddress?.emailAddress || "")
+  const [currentPassword, setCurrentPassword] = React.useState("")
+  const [newPassword, setNewPassword] = React.useState("")
+  const [confirmPassword, setConfirmPassword] = React.useState("")
+  const [selectedLanguage, setSelectedLanguage] = React.useState("English")
+
+  const languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese"]
+
+  const handleLogout = async () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign Out",
         style: "destructive",
         onPress: async () => {
-          await signOut()
-          router.replace('/(auth)' as any)
+          try {
+            console.log("Starting sign out process...")
+            await signOut()
+            console.log("Sign out successful, navigating to auth...")
+            // Use replace to prevent going back
+            router.replace("/(auth)/sign-in")
+          } catch (error) {
+            console.error("Sign out error:", error)
+            Alert.alert("Error", "Failed to sign out. Please try again.")
+          }
         },
       },
     ])
+  }
+
+  const handleSaveProfile = async () => {
+    try {
+      await user?.update({
+        firstName,
+        lastName,
+      })
+      Alert.alert("Success", "Profile updated successfully")
+      setProfileModalVisible(false)
+    } catch (error) {
+      Alert.alert("Error", "Failed to update profile")
+    }
+  }
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      Alert.alert("Error", "New passwords do not match")
+      return
+    }
+    if (newPassword.length < 8) {
+      Alert.alert("Error", "Password must be at least 8 characters long")
+      return
+    }
+
+    try {
+      await user?.updatePassword({
+        currentPassword,
+        newPassword,
+      })
+      Alert.alert("Success", "Password changed successfully")
+      setPasswordModalVisible(false)
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+    } catch (error) {
+      Alert.alert("Error", "Failed to change password")
+    }
   }
 
   const SettingsSection = ({ title, children }: { title: string; children: React.ReactNode }) => (
@@ -101,7 +182,7 @@ export default function Settings() {
             <Text style={styles.profileRole}>Healthcare Provider</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.editProfileButton}>
+        <TouchableOpacity style={styles.editProfileButton} onPress={() => setProfileModalVisible(true)}>
           <Text style={styles.editProfileText}>Edit Profile</Text>
         </TouchableOpacity>
       </View>
@@ -111,19 +192,19 @@ export default function Settings() {
           icon={<User size={20} color={Colors.neutral[600]} />}
           title="Personal Information"
           subtitle="Update your personal details"
-          onPress={() => {router.push('/(doctor)/settings/personal-info')}}
+          onPress={() => setProfileModalVisible(true)}
         />
         <SettingsItem
           icon={<Lock size={20} color={Colors.neutral[600]} />}
           title="Change Password"
           subtitle="Update your password"
-          onPress={() => {router.push('/(doctor)/settings/change-password')}}
+          onPress={() => setPasswordModalVisible(true)}
         />
         <SettingsItem
           icon={<Shield size={20} color={Colors.neutral[600]} />}
           title="Privacy & Security"
           subtitle="Manage your privacy settings"
-          onPress={() => {router.push('/(doctor)/settings/privacy-security')}}
+          onPress={() => setPrivacyModalVisible(true)}
         />
       </SettingsSection>
 
@@ -159,8 +240,8 @@ export default function Settings() {
         <SettingsItem
           icon={<Globe size={20} color={Colors.neutral[600]} />}
           title="Language"
-          subtitle="English"
-          onPress={() => {router.push('/(doctor)/settings/language')}}
+          subtitle={selectedLanguage}
+          onPress={() => setLanguageModalVisible(true)}
         />
       </SettingsSection>
 
@@ -169,19 +250,19 @@ export default function Settings() {
           icon={<Heart size={20} color={Colors.neutral[600]} />}
           title="Data Sharing"
           subtitle="Manage data sharing preferences"
-          onPress={() => {router.push('/(doctor)/settings/data-sharing')}}
+          onPress={() => setDataModalVisible(true)}
         />
         <SettingsItem
           icon={<Smartphone size={20} color={Colors.neutral[600]} />}
           title="Connected Devices"
           subtitle="Manage connected health devices"
-          onPress={() => {router.push('/(doctor)/settings/connected-devices')}}
+          onPress={() => setDevicesModalVisible(true)}
         />
         <SettingsItem
           icon={<Mail size={20} color={Colors.neutral[600]} />}
           title="Consent Management"
           subtitle="View and manage consent forms"
-          onPress={() => {router.push('/(doctor)/settings/consent-management')}}
+          onPress={() => setConsentModalVisible(true)}
         />
       </SettingsSection>
 
@@ -190,13 +271,13 @@ export default function Settings() {
           icon={<Mail size={20} color={Colors.neutral[600]} />}
           title="Contact Support"
           subtitle="Get help with your account"
-          onPress={() => {router.push('/(doctor)/settings/contact-support')}}
+          onPress={() => setSupportModalVisible(true)}
         />
         <SettingsItem
           icon={<Shield size={20} color={Colors.neutral[600]} />}
           title="Terms & Privacy"
           subtitle="Read our terms and privacy policy"
-          onPress={() => {router.push('/(doctor)/settings/terms-privacy')}}
+          onPress={() => setTermsModalVisible(true)}
         />
       </SettingsSection>
 
@@ -210,6 +291,163 @@ export default function Settings() {
       <View style={styles.versionInfo}>
         <Text style={styles.versionText}>MaternalCare v1.0.0</Text>
       </View>
+
+      {/* Profile Modal */}
+      <Modal visible={profileModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setProfileModalVisible(false)}>
+              <X size={24} color={Colors.neutral[600]} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Profile</Text>
+            <TouchableOpacity onPress={handleSaveProfile}>
+              <Save size={24} color={Colors.primary[600]} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>First Name</Text>
+              <TextInput
+                style={styles.input}
+                value={firstName}
+                onChangeText={setFirstName}
+                placeholder="Enter first name"
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Last Name</Text>
+              <TextInput
+                style={styles.input}
+                value={lastName}
+                onChangeText={setLastName}
+                placeholder="Enter last name"
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput style={[styles.input, styles.disabledInput]} value={email} editable={false} />
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Password Modal */}
+      <Modal visible={passwordModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setPasswordModalVisible(false)}>
+              <X size={24} color={Colors.neutral[600]} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Change Password</Text>
+            <TouchableOpacity onPress={handleChangePassword}>
+              <Save size={24} color={Colors.primary[600]} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalContent}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Current Password</Text>
+              <TextInput
+                style={styles.input}
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                placeholder="Enter current password"
+                secureTextEntry
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>New Password</Text>
+              <TextInput
+                style={styles.input}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                placeholder="Enter new password"
+                secureTextEntry
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Confirm New Password</Text>
+              <TextInput
+                style={styles.input}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirm new password"
+                secureTextEntry
+              />
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Language Modal */}
+      <Modal visible={languageModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setLanguageModalVisible(false)}>
+              <X size={24} color={Colors.neutral[600]} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Select Language</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <ScrollView style={styles.modalContent}>
+            {languages.map((language) => (
+              <TouchableOpacity
+                key={language}
+                style={[styles.languageItem, selectedLanguage === language && styles.selectedLanguageItem]}
+                onPress={() => {
+                  setSelectedLanguage(language)
+                  setLanguageModalVisible(false)
+                }}
+              >
+                <Text style={[styles.languageText, selectedLanguage === language && styles.selectedLanguageText]}>
+                  {language}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Other modals with basic content */}
+      <Modal visible={privacyModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setPrivacyModalVisible(false)}>
+              <X size={24} color={Colors.neutral[600]} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Privacy & Security</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <ScrollView style={styles.modalContent}>
+            <Text style={styles.modalText}>
+              Manage your privacy and security settings. This includes data encryption, access controls, and privacy
+              preferences for your medical information.
+            </Text>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal visible={supportModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSupportModalVisible(false)}>
+              <X size={24} color={Colors.neutral[600]} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Contact Support</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <ScrollView style={styles.modalContent}>
+            <Text style={styles.modalText}>
+              Need help? Contact our support team:
+              {"\n\n"}
+              Email: support@maternalcare.com
+              {"\n"}
+              Phone: 1-800-MATERNAL
+              {"\n"}
+              Hours: Monday-Friday, 9AM-5PM EST
+            </Text>
+          </ScrollView>
+        </View>
+      </Modal>
     </ScrollView>
   )
 }
@@ -376,4 +614,70 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Regular",
     color: Colors.neutral[500],
   },
-}) 
+  modalContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.neutral[200],
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: "Poppins-SemiBold",
+    color: Colors.neutral[800],
+  },
+  modalContent: {
+    flex: 1,
+    padding: Spacing.lg,
+  },
+  inputGroup: {
+    marginBottom: Spacing.lg,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontFamily: "Inter-SemiBold",
+    color: Colors.neutral[700],
+    marginBottom: Spacing.xs,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: Colors.neutral[300],
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: Colors.neutral[800],
+  },
+  disabledInput: {
+    backgroundColor: Colors.neutral[100],
+    color: Colors.neutral[500],
+  },
+  languageItem: {
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.neutral[100],
+  },
+  selectedLanguageItem: {
+    backgroundColor: Colors.primary[50],
+  },
+  languageText: {
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: Colors.neutral[800],
+  },
+  selectedLanguageText: {
+    color: Colors.primary[600],
+    fontFamily: "Inter-SemiBold",
+  },
+  modalText: {
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: Colors.neutral[700],
+    lineHeight: 24,
+  },
+})

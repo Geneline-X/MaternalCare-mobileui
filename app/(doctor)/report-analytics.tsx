@@ -10,7 +10,7 @@ import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
 import type { AnalyticsMetrics, ChartDataset, PieChartData, ReportInsight, ExportOptions } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-import CustomBottomNavigation from "../../components/CustomBottomNavigation"
+
 
 const screenWidth = Dimensions.get("window").width
 
@@ -415,7 +415,7 @@ export default function ReportsAnalytics() {
         </View>
       </ScrollView>
 
-      <CustomBottomNavigation />
+   
     </SafeAreaView>
   )
 }

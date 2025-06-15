@@ -20,7 +20,6 @@ import { LineChart, BarChart } from "react-native-chart-kit"
 import { useRouter } from "expo-router"
 import type { SearchResult, DashboardData } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-import CustomBottomNavigation from "../../components/CustomBottomNavigation"
 
 
 // Mock data for dashboard analytics
@@ -488,7 +487,6 @@ const Dashboard: React.FC = () => {
         </TouchableOpacity>
       </Modal>
 
-      <CustomBottomNavigation />
     </SafeAreaView>
   )
 }
