@@ -1,83 +1,121 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Bell, Settings, Calendar, Heart, Activity } from 'lucide-react-native';
-import { Colors } from '../../constants/colors';
-import { Spacing } from '../../constants/spacing';
-import { LinearGradient } from 'expo-linear-gradient';
+"use client"
+
+import type React from "react"
+import { useEffect, useState } from "react"
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from "react-native"
+import { useRouter } from "expo-router"
+import { Bell, Settings, Calendar, Heart, Activity } from "lucide-react-native"
+import { Colors } from "../../constants/colors"
+import { Spacing } from "../../constants/spacing"
+import { LinearGradient } from "expo-linear-gradient"
+import { useAuth, useUser } from "@clerk/clerk-expo"
 
 interface DashboardData {
   patient: {
-    name: string;
-  };
+    name: string
+  }
   pregnancySummary: {
-    active: boolean;
-    estimatedDueDate: string;
-    gestationalAge: string;
-    nextAppointment: string;
-  };
+    active: boolean
+    estimatedDueDate: string
+    gestationalAge: string
+    nextAppointment: string
+  }
   recentObservations: Array<{
-    id: string;
-    type: string;
-    value: string;
-    date: string;
-  }>;
+    id: string
+    type: string
+    value: string
+    date: string
+  }>
   upcomingAppointments: Array<{
-    id: string;
-    date: string;
-    type: string;
-    doctor: string;
-  }>;
+    id: string
+    date: string
+    type: string
+    doctor: string
+  }>
 }
 
 interface SectionProps {
-  title: string;
-  children: React.ReactNode;
+  title: string
+  children: React.ReactNode
 }
 
 interface InfoRowProps {
-  label: string;
-  value: string;
+  label: string
+  value: string
 }
 
 export default function PatientDashboard() {
-  const router = useRouter();
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const router = useRouter()
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
+  const { isLoaded, isSignedIn } = useAuth()
+  const { user } = useUser()
+
+  // Handle authentication redirect in useEffect, not during render
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.replace("/(auth)/sign-in")
+      return
+    }
+  }, [isLoaded, isSignedIn, router])
 
   useEffect(() => {
-    setDashboardData({
-      patient: {
-        name: 'Jane Doe',
-      },
-      pregnancySummary: {
-        active: true,
-        estimatedDueDate: '2023-12-15',
-        gestationalAge: '24 weeks',
-        nextAppointment: '2023-06-15T10:00:00Z',
-      },
-      recentObservations: [
-        { id: '1', type: 'Blood Pressure', value: '120/80 mmHg', date: '2023-06-01' },
-        { id: '2', type: 'Weight', value: '65 kg', date: '2023-06-01' },
-        { id: '3', type: 'Heart Rate', value: '72 bpm', date: '2023-06-01' },
-      ],
-      upcomingAppointments: [
-        {
-          id: 'apt-1',
-          date: '2023-06-15T10:00:00Z',
-          type: 'Prenatal Checkup',
-          doctor: 'Dr. Sarah Wilson',
+    // Only set dashboard data if user is authenticated
+    if (isLoaded && isSignedIn) {
+      setDashboardData({
+        patient: {
+          name: user?.firstName ? `${user.firstName} ${user.lastName || ""}`.trim() : "Patient",
         },
-        {
-          id: 'apt-2',
-          date: '2023-06-20T14:30:00Z',
-          type: 'Ultrasound',
-          doctor: 'Dr. Michael Brown',
+        pregnancySummary: {
+          active: true,
+          estimatedDueDate: "2023-12-15",
+          gestationalAge: "24 weeks",
+          nextAppointment: "2023-06-15T10:00:00Z",
         },
-      ],
-    });
-  }, []);
+        recentObservations: [
+          { id: "1", type: "Blood Pressure", value: "120/80 mmHg", date: "2023-06-01" },
+          { id: "2", type: "Weight", value: "65 kg", date: "2023-06-01" },
+          { id: "3", type: "Heart Rate", value: "72 bpm", date: "2023-06-01" },
+        ],
+        upcomingAppointments: [
+          {
+            id: "apt-1",
+            date: "2023-06-15T10:00:00Z",
+            type: "Prenatal Checkup",
+            doctor: "Dr. Sarah Wilson",
+          },
+          {
+            id: "apt-2",
+            date: "2023-06-20T14:30:00Z",
+            type: "Ultrasound",
+            doctor: "Dr. Michael Brown",
+          },
+        ],
+      })
+    }
+  }, [isLoaded, isSignedIn, user])
 
-  if (!dashboardData) return <View style={styles.loading}><Text>Loading...</Text></View>;
+  // Show loading while auth is being checked
+  if (!isLoaded) {
+    return (
+      <View style={styles.loading}>
+        <Text>Loading...</Text>
+      </View>
+    )
+  }
+
+  // Don't render anything if not signed in (redirect will happen in useEffect)
+  if (!isSignedIn) {
+    return null
+  }
+
+  // Show loading while dashboard data is being set
+  if (!dashboardData) {
+    return (
+      <View style={styles.loading}>
+        <Text>Loading dashboard...</Text>
+      </View>
+    )
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -95,18 +133,12 @@ export default function PatientDashboard() {
               <Text style={styles.name}>{dashboardData.patient.name}</Text>
             </View>
             <View style={styles.headerActions}>
-              <TouchableOpacity 
-                style={styles.iconButton} 
-                onPress={() => router.push('/notifications')}
-              >
+              <TouchableOpacity style={styles.iconButton} onPress={() => router.push("/notifications")}>
                 <View style={styles.iconContainer}>
                   <Bell size={20} color={Colors.white} />
                 </View>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.iconButton} 
-                onPress={() => router.push('/settings')}
-              >
+              <TouchableOpacity style={styles.iconButton} onPress={() => router.push("/settings")}>
                 <View style={styles.iconContainer}>
                   <Settings size={20} color={Colors.white} />
                 </View>
@@ -118,7 +150,7 @@ export default function PatientDashboard() {
 
       {/* Quick Actions */}
       <View style={styles.quickActions}>
-        <TouchableOpacity style={styles.actionButton}>
+        <TouchableOpacity style={styles.actionButton} onPress={() => router.push("/(patient)/appointment")}>
           <View style={[styles.actionIcon, { backgroundColor: Colors.primary[50] }]}>
             <Calendar size={24} color={Colors.primary[600]} />
           </View>
@@ -151,7 +183,7 @@ export default function PatientDashboard() {
             <View style={styles.summaryItem}>
               <Text style={[styles.summaryLabel, { color: Colors.white }]}>Status</Text>
               <Text style={[styles.summaryValue, { color: Colors.white }]}>
-                {dashboardData.pregnancySummary.active ? 'Active' : 'Completed'}
+                {dashboardData.pregnancySummary.active ? "Active" : "Completed"}
               </Text>
             </View>
             <View style={styles.summaryItem}>
@@ -173,11 +205,11 @@ export default function PatientDashboard() {
       {/* Upcoming Appointments */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Upcoming Appointments</Text>
-        {dashboardData.upcomingAppointments.map(appointment => (
+        {dashboardData.upcomingAppointments.map((appointment) => (
           <TouchableOpacity
             key={appointment.id}
             style={styles.appointmentCard}
-            onPress={() => router.push('./appointments')}
+            onPress={() => router.push("/(patient)/appointment")}
           >
             <LinearGradient
               colors={[Colors.primary[400], Colors.primary[500]]}
@@ -204,7 +236,7 @@ export default function PatientDashboard() {
           end={{ x: 1, y: 1 }}
           style={styles.card}
         >
-          {dashboardData.recentObservations.map(observation => (
+          {dashboardData.recentObservations.map((observation) => (
             <View key={observation.id} style={styles.observationItem}>
               <View>
                 <Text style={[styles.observationType, { color: Colors.white }]}>{observation.type}</Text>
@@ -216,7 +248,7 @@ export default function PatientDashboard() {
         </LinearGradient>
       </View>
     </ScrollView>
-  );
+  )
 }
 
 const Section: React.FC<SectionProps> = ({ title, children }) => (
@@ -224,23 +256,23 @@ const Section: React.FC<SectionProps> = ({ title, children }) => (
     <Text style={styles.sectionTitle}>{title}</Text>
     <View style={styles.card}>{children}</View>
   </View>
-);
+)
 
 const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
   <View style={styles.row}>
     <Text style={styles.label}>{label}</Text>
     <Text style={styles.value}>{value}</Text>
   </View>
-);
+)
 
 const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-};
+  const date = new Date(dateString)
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  })
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -252,13 +284,14 @@ const styles = StyleSheet.create({
   },
   loading: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.neutral[50],
   },
   header: {
     borderRadius: 24,
     marginBottom: Spacing.xl,
-    overflow: 'hidden',
+    overflow: "hidden",
     shadowColor: Colors.neutral[900],
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -269,15 +302,15 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
   },
   headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   headerTextContainer: {
     flex: 1,
   },
   headerActions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: Spacing.sm,
   },
   iconButton: {
@@ -287,54 +320,54 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   greeting: {
     fontSize: 14,
     color: Colors.white,
     marginBottom: Spacing.xs,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     opacity: 0.9,
   },
   name: {
     fontSize: 28,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.white,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: "Inter-SemiBold",
   },
   quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: Spacing.xl,
   },
   actionButton: {
-    alignItems: 'center',
-    width: '30%',
+    alignItems: "center",
+    width: "30%",
   },
   actionIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: Spacing.xs,
   },
   actionText: {
     fontSize: 12,
     color: Colors.neutral[700],
-    fontWeight: '500',
+    fontWeight: "500",
   },
   section: {
     marginBottom: Spacing.xl,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     color: Colors.neutral[900],
     marginBottom: Spacing.md,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: "Inter-SemiBold",
   },
   card: {
     borderRadius: 16,
@@ -346,30 +379,30 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginHorizontal: -Spacing.xs,
   },
   summaryItem: {
-    width: '50%',
+    width: "50%",
     paddingHorizontal: Spacing.xs,
     marginBottom: Spacing.md,
   },
   summaryLabel: {
     fontSize: 12,
     marginBottom: Spacing.xs,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     opacity: 0.9,
   },
   summaryValue: {
     fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: "600",
+    fontFamily: "Inter-SemiBold",
   },
   appointmentCard: {
     borderRadius: 16,
     marginBottom: Spacing.md,
-    overflow: 'hidden',
+    overflow: "hidden",
     shadowColor: Colors.neutral[900],
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -380,64 +413,64 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
   },
   appointmentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: Spacing.xs,
   },
   appointmentType: {
     fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: "600",
+    fontFamily: "Inter-SemiBold",
   },
   appointmentDate: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     opacity: 0.9,
   },
   appointmentDoctor: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     opacity: 0.9,
   },
   observationItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
   },
   observationType: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
     marginBottom: Spacing.xs,
-    fontFamily: 'Inter-Medium',
+    fontFamily: "Inter-Medium",
   },
   observationDate: {
     fontSize: 12,
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
     opacity: 0.9,
   },
   observationValue: {
     fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: "600",
+    fontFamily: "Inter-SemiBold",
   },
   row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: Spacing.sm,
   },
   label: {
     fontSize: 14,
     color: Colors.neutral[700],
-    fontFamily: 'Inter-Regular',
+    fontFamily: "Inter-Regular",
   },
   value: {
     fontSize: 14,
     color: Colors.neutral[900],
-    fontFamily: 'Inter-Medium',
+    fontFamily: "Inter-Medium",
   },
-});
+})

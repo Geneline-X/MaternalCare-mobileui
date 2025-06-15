@@ -25,7 +25,7 @@ export default function SignUp() {
     lastName: "",
     email: "",
     password: "",
-    role: "patient" as 'patient' | 'doctor'
+    role: "patient" as "patient" | "doctor",
   })
   const [pendingVerification, setPendingVerification] = useState(false)
   const [code, setCode] = useState("")
@@ -33,74 +33,58 @@ export default function SignUp() {
   const router = useRouter()
 
   const validateEmail = (email: string) => {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    return re.test(email)
+  }
 
   const handleSignUp = async () => {
-    if (!isLoaded) return;
+    if (!isLoaded) return
 
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
-      Alert.alert("Error", "Please fill in all required fields");
-      return;
-    }
-    
-    if (!formData.role) {
-      Alert.alert("Error", "Please select an account type");
-      return;
+      Alert.alert("Error", "Please fill in all required fields")
+      return
     }
 
     if (!validateEmail(formData.email)) {
-      Alert.alert("Error", "Please enter a valid email address");
-      return;
+      Alert.alert("Error", "Please enter a valid email address")
+      return
     }
 
     if (formData.password.length < 8) {
-      Alert.alert("Error", "Password must be at least 8 characters");
-      return;
+      Alert.alert("Error", "Password must be at least 8 characters")
+      return
     }
 
-    setIsLoading(true);
+    setIsLoading(true)
     try {
-      // Create the user with all data in unsafeMetadata
       await signUp.create({
         emailAddress: formData.email.trim().toLowerCase(),
         password: formData.password,
         unsafeMetadata: {
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
-          role: formData.role
-        }
-      });
+          role: formData.role,
+        },
+      })
 
-      // No need for a separate update call
-
-      // Prepare email verification
-      await signUp.prepareEmailAddressVerification({ 
-        strategy: "email_code" 
-      });
-      setPendingVerification(true);
+      await signUp.prepareEmailAddressVerification({
+        strategy: "email_code",
+      })
+      setPendingVerification(true)
     } catch (err: any) {
-      console.error('Signup error:', JSON.stringify(err, null, 2));
-      
-      let errorMessage = 'Sign up failed. Please try again.';
-      
-      if (err.errors) {
-        const clerkError = err.errors[0];
-        if (clerkError) {
-          if (clerkError.code === 'form_identifier_exists') {
-            errorMessage = 'This email is already registered. Please sign in instead.';
-          } else if (clerkError.message) {
-            errorMessage = clerkError.message;
-          }
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
+      console.error("Signup error:", err)
+
+      let errorMessage = "Sign up failed. Please try again."
+
+      if (err.errors?.[0]?.code === "form_identifier_exists") {
+        errorMessage = "This email is already registered. Please sign in instead."
+      } else if (err.errors?.[0]?.message) {
+        errorMessage = err.errors[0].message
       }
-      
-      Alert.alert('Error', errorMessage);
+
+      Alert.alert("Error", errorMessage)
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
   }
 
@@ -114,17 +98,9 @@ export default function SignUp() {
       })
 
       if (completeSignUp.status === "complete") {
-        // Get the user role from the sign up data
-        const userRole = completeSignUp.createdUserId ? 
-          (completeSignUp.unsafeMetadata?.role as string) || 'patient' : 'patient';
-        
-        await setActive({ session: completeSignUp.createdSessionId });
-        
-        // Redirect based on role
-        const redirectPath = userRole === 'doctor' ? '/(doctor)/dashboard' : '/(patient)/home';
-        router.replace(redirectPath as any);
-      } else {
-        console.log(JSON.stringify(completeSignUp, null, 2))
+        await setActive({ session: completeSignUp.createdSessionId })
+        // Let the root index.tsx handle the redirection
+        router.replace("/")
       }
     } catch (err: any) {
       Alert.alert("Error", err.errors?.[0]?.message || "Verification failed")
@@ -179,31 +155,25 @@ export default function SignUp() {
           </TouchableOpacity>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Fill in your details to get started</Text>
-          
+
           <View style={styles.roleContainer}>
             <Text style={styles.roleLabel}>I am a</Text>
             <View style={styles.roleButtons}>
-              <TouchableOpacity 
-                style={[
-                  styles.roleButton, 
-                  formData.role === 'patient' && styles.roleButtonActive
-                ]}
-                onPress={() => setFormData({...formData, role: 'patient'})}
+              <TouchableOpacity
+                style={[styles.roleButton, formData.role === "patient" && styles.roleButtonActive]}
+                onPress={() => setFormData({ ...formData, role: "patient" })}
               >
-                <UserIcon size={20} color={formData.role === 'patient' ? Colors.white : Colors.primary[600]} />
-                <Text style={[styles.roleButtonText, formData.role === 'patient' && styles.roleButtonTextActive]}>
+                <UserIcon size={20} color={formData.role === "patient" ? Colors.white : Colors.primary[600]} />
+                <Text style={[styles.roleButtonText, formData.role === "patient" && styles.roleButtonTextActive]}>
                   Patient
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[
-                  styles.roleButton, 
-                  formData.role === 'doctor' && styles.roleButtonActive
-                ]}
-                onPress={() => setFormData({...formData, role: 'doctor'})}
+              <TouchableOpacity
+                style={[styles.roleButton, formData.role === "doctor" && styles.roleButtonActive]}
+                onPress={() => setFormData({ ...formData, role: "doctor" })}
               >
-                <Stethoscope size={20} color={formData.role === 'doctor' ? Colors.white : Colors.primary[600]} />
-                <Text style={[styles.roleButtonText, formData.role === 'doctor' && styles.roleButtonTextActive]}>
+                <Stethoscope size={20} color={formData.role === "doctor" ? Colors.white : Colors.primary[600]} />
+                <Text style={[styles.roleButtonText, formData.role === "doctor" && styles.roleButtonTextActive]}>
                   Doctor
                 </Text>
               </TouchableOpacity>
@@ -318,27 +288,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.neutral[500],
     marginBottom: 24,
-    textAlign: 'center',
+    textAlign: "center",
   },
   roleContainer: {
     marginBottom: 24,
-    width: '100%',
+    width: "100%",
   },
   roleLabel: {
     fontSize: 14,
     color: Colors.neutral[600],
     marginBottom: 8,
-    fontFamily: 'Inter-Medium',
+    fontFamily: "Inter-Medium",
   },
   roleButtons: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
   },
   roleButton: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: BorderRadius.md,
@@ -353,7 +323,7 @@ const styles = StyleSheet.create({
   roleButtonText: {
     marginLeft: 8,
     fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
+    fontFamily: "Inter-SemiBold",
     color: Colors.neutral[800],
   },
   roleButtonTextActive: {

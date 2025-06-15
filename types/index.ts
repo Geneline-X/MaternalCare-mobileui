@@ -1,10 +1,17 @@
+export type UserRole = 'patient' | 'doctor' | 'nurse';
+
 export interface User {
   id: string;
   email: string;
-  name: string;
-  role: 'patient' | 'doctor' | 'nurse';
+  firstName?: string;
+  lastName?: string;
+  role: UserRole;
   avatar?: string;
   facility?: string;
+  unsafeMetadata?: {
+    role?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface AuthTokens {
@@ -67,6 +74,33 @@ export interface Notification {
   isRead: boolean;
   createdAt: string;
   actionUrl?: string;
+}
+
+export interface ChartData {
+  labels: string[];
+  datasets: {
+    data: number[];
+    color: (opacity?: number) => string;
+    strokeWidth: number;
+  }[];
+}
+
+export interface Message {
+  id: string;
+  text: string;
+  sender: 'me' | 'other';
+  timestamp?: Date;
+}
+
+export interface Appointment {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  dateTime: Date;
+  status: 'scheduled' | 'completed' | 'cancelled' | 'rescheduled';
+  type: 'in-person' | 'video' | 'phone';
+  notes?: string;
+  duration: number; // in minutes
 }
 
 export interface DynamicForm {
