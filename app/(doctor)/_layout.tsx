@@ -68,6 +68,7 @@ export default function DoctorLayout() {
       />
 
       {/* All other screens are hidden but accessible via navigation */}
+      <Tabs.Screen name="patient-details" options={{ href: null }} />
       <Tabs.Screen name="dynamic-form" options={{ href: null }} />
       <Tabs.Screen name="report-analytics" options={{ href: null }} />
       <Tabs.Screen name="schedule-visit" options={{ href: null }} />

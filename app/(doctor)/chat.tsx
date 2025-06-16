@@ -2,16 +2,7 @@
 import { useState } from "react"
 import type { ChatMessage } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
-  TextInput,
-  Alert,
-} from "react-native"
+import { View, Text, TouchableOpacity, KeyboardAvoidingView, ScrollView, Platform, TextInput } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/colors"
 import { StyleSheet } from "react-native"
@@ -29,7 +20,6 @@ const mockMessages: ChatMessage[] = [
     text: "Hi Sarah! I'm here to help. Could you please describe the cramping more? Is it constant or intermittent?",
     sender: "me",
     timestamp: "2024-01-15T09:35:00Z",
-    patientName: "Dr. Wilson",
   },
   {
     id: "3",
@@ -70,42 +60,22 @@ const ChatComponent = () => {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
   }
 
-  const renderMessage = (message: ChatMessage) => {
-    const isMyMessage = message.sender === "me"
-
-    return (
-      <View key={message.id} style={[styles.messageContainer, isMyMessage ? styles.myMessage : styles.otherMessage]}>
-        {!isMyMessage && message.patientName && <Text style={styles.patientName}>{message.patientName}</Text>}
-        <View style={[styles.messageBubble, isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble]}>
-          <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-            {message.text}
-          </Text>
-        </View>
-        <Text style={[styles.timestamp, isMyMessage ? styles.myTimestamp : styles.otherTimestamp]}>
-          {formatTime(message.timestamp)}
-        </Text>
-      </View>
-    )
-  }
-
   const handleSendMessage = () => {
     if (inputText.trim()) {
       // TODO: Implement send message functionality
-      Alert.alert("Message", `Sending: ${inputText}`)
+      console.log("Sending message:", inputText)
       setInputText("")
     }
   }
 
-  const handleVoiceNote = () => {
-    if (isRecording) {
-      // Stop recording
-      setIsRecording(false)
-      Alert.alert("Voice Note", "Recording stopped")
-    } else {
-      // Start recording
-      setIsRecording(true)
-      Alert.alert("Voice Note", "Recording started")
-    }
+  const startRecording = () => {
+    setIsRecording(true)
+    console.log("Starting voice recording...")
+  }
+
+  const stopRecording = () => {
+    setIsRecording(false)
+    console.log("Stopping voice recording...")
   }
 
   const handleQuickReply = (reply: string) => {
@@ -113,22 +83,51 @@ const ChatComponent = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Patient Chat</Text>
-      </View>
-
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        style={styles.chatContainer}
+        style={styles.keyboardContainer}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.patientInfo}>
+            <View style={styles.patientAvatar}>
+              <Ionicons name="person" size={24} color="white" />
+            </View>
+            <View>
+              <Text style={styles.patientName}>Sarah Johnson</Text>
+              <Text style={styles.patientStatus}>24 weeks pregnant • Active</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.callButton}>
+            <Ionicons name="call" size={20} color={Colors.primary[600]} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Messages */}
         <ScrollView
           style={styles.messagesContainer}
-          contentContainerStyle={[styles.messagesContent, { paddingBottom: 20 }]}
+          contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
         >
-          {mockMessages.map(renderMessage)}
+          {mockMessages.map((message) => {
+            const isMyMessage = message.sender === "me"
+            return (
+              <View
+                key={message.id}
+                style={[styles.messageContainer, isMyMessage ? styles.doctorMessage : styles.patientMessage]}
+              >
+                {!isMyMessage && message.patientName && <Text style={styles.senderName}>{message.patientName}</Text>}
+                <Text style={[styles.messageText, isMyMessage ? styles.doctorMessageText : styles.patientMessageText]}>
+                  {message.text}
+                </Text>
+                <Text style={[styles.timestamp, isMyMessage ? styles.doctorTimestamp : styles.patientTimestamp]}>
+                  {formatTime(message.timestamp)}
+                </Text>
+              </View>
+            )
+          })}
         </ScrollView>
 
         {/* Quick Replies */}
@@ -140,31 +139,33 @@ const ChatComponent = () => {
           ))}
         </ScrollView>
 
-        {/* Chat Input */}
-        <View style={[styles.inputContainer, { marginBottom: 80 }]}>
+        {/* Input Container */}
+        <View style={styles.inputContainer}>
           <View style={styles.inputRow}>
             <TextInput
-              style={styles.textInput}
-              placeholder="Type a message..."
+              style={styles.input}
               value={inputText}
               onChangeText={setInputText}
+              placeholder="Type your message..."
+              placeholderTextColor="#999"
               multiline
               maxLength={500}
             />
-
             {inputText.trim() ? (
               <TouchableOpacity style={styles.sendButton} onPress={handleSendMessage}>
-                <Ionicons name="send" size={20} color="#fff" />
+                <Ionicons name="send" size={20} color="white" />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={[styles.voiceButton, isRecording && styles.recordingButton]}
-                onPress={handleVoiceNote}
+                style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
+                onPress={isRecording ? stopRecording : startRecording}
+                onLongPress={startRecording}
+                onPressOut={stopRecording}
               >
                 <Ionicons
                   name={isRecording ? "stop" : "mic"}
                   size={20}
-                  color={isRecording ? "#fff" : Colors.primary[600]}
+                  color={isRecording ? "white" : Colors.primary[600]}
                 />
               </TouchableOpacity>
             )}
@@ -179,86 +180,115 @@ const ChatComponent = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#F8FAFF",
+  },
+  keyboardContainer: {
+    flex: 1,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: "white",
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#F0F0F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  title: {
-    fontSize: 20,
+  patientInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  patientAvatar: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    backgroundColor: Colors.primary[600],
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  patientName: {
+    fontSize: 16,
     fontWeight: "bold",
+    color: "#333",
+    marginBottom: 2,
   },
-  chatContainer: {
-    flex: 1,
+  patientStatus: {
+    fontSize: 12,
+    color: "#666",
+  },
+  callButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#E3F2FD",
+    alignItems: "center",
+    justifyContent: "center",
   },
   messagesContainer: {
     flex: 1,
+    backgroundColor: "#F8FAFF",
   },
   messagesContent: {
-    paddingTop: 16,
-    paddingHorizontal: 16,
+    padding: 20,
+    paddingBottom: 20,
   },
   messageContainer: {
-    marginBottom: 16,
+    maxWidth: "80%",
+    marginBottom: 15,
+    borderRadius: 16,
+    padding: 12,
   },
-  myMessage: {
-    alignItems: "flex-end",
+  doctorMessage: {
+    alignSelf: "flex-end",
+    backgroundColor: Colors.primary[600],
+    borderBottomRightRadius: 4,
   },
-  otherMessage: {
-    alignItems: "flex-start",
+  patientMessage: {
+    alignSelf: "flex-start",
+    backgroundColor: "white",
+    borderBottomLeftRadius: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  patientName: {
+  senderName: {
     fontSize: 12,
     color: Colors.primary[600],
     fontWeight: "600",
     marginBottom: 4,
-    marginLeft: 8,
-  },
-  messageBubble: {
-    maxWidth: "80%",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-  },
-  myMessageBubble: {
-    backgroundColor: Colors.primary[600],
-    borderBottomRightRadius: 4,
-  },
-  otherMessageBubble: {
-    backgroundColor: "#f0f0f0",
-    borderBottomLeftRadius: 4,
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 22,
+    marginBottom: 4,
   },
-  myMessageText: {
-    color: "#fff",
+  doctorMessageText: {
+    color: "white",
   },
-  otherMessageText: {
+  patientMessageText: {
     color: "#333",
   },
   timestamp: {
-    fontSize: 12,
+    fontSize: 11,
+    alignSelf: "flex-end",
+  },
+  doctorTimestamp: {
+    color: "rgba(255, 255, 255, 0.8)",
+  },
+  patientTimestamp: {
     color: "#999",
-    marginTop: 4,
-  },
-  myTimestamp: {
-    textAlign: "right",
-    marginRight: 8,
-  },
-  otherTimestamp: {
-    textAlign: "left",
-    marginLeft: 8,
   },
   quickRepliesContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 8,
     maxHeight: 50,
   },
@@ -274,48 +304,58 @@ const styles = StyleSheet.create({
     color: Colors.primary[600],
   },
   inputContainer: {
-    backgroundColor: "#f9f9f9",
-    padding: 16,
+    backgroundColor: "white",
     borderTopWidth: 1,
-    borderTopColor: "#eee",
+    borderTopColor: "#F0F0F0",
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    marginBottom: 0,
   },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 8,
+    backgroundColor: "#F8F9FA",
+    borderRadius: 25,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    minHeight: 50,
   },
-  textInput: {
+  attachButton: {
+    marginRight: 10,
+    padding: 5,
+  },
+  input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#fff",
     fontSize: 16,
+    color: "#333",
     maxHeight: 100,
+    paddingVertical: 8,
+    paddingHorizontal: 5,
   },
   sendButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: Colors.primary[600],
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
   },
   voiceButton: {
-    backgroundColor: "#f0f0f0",
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#E3F2FD",
     alignItems: "center",
-    borderWidth: 1,
+    justifyContent: "center",
+    marginLeft: 10,
+    borderWidth: 2,
     borderColor: Colors.primary[600],
   },
-  recordingButton: {
-    backgroundColor: "#ff4444",
-    borderColor: "#ff4444",
+  voiceButtonRecording: {
+    backgroundColor: Colors.primary[600],
+    borderColor: Colors.primary[700],
+    transform: [{ scale: 1.1 }],
   },
 })
 
