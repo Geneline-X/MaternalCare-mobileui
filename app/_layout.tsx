@@ -8,6 +8,7 @@ import { Stack, useRouter, useSegments } from "expo-router"
 import { ClerkProvider, useAuth, useUser } from "@clerk/clerk-expo"
 import * as SecureStore from "expo-secure-store"
 import * as SplashScreen from "expo-splash-screen"
+import { logSecureToken, getSecureToken } from "../utils/authUtils"
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync()
@@ -42,9 +43,18 @@ const tokenCache = {
     }
   },
 }
-
 // Auth state handler
 const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  // Log the token when the component mounts
+  useEffect(() => {
+    const initAuth = async () => {
+      await logSecureToken('__clerk_client_jwt');
+      const token = await getSecureToken('__clerk_client_jwt');
+      console.log("[SecureStore] Token:", token ? "***" : "null");
+    };
+    initAuth();
+  }, []);
+  
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const { user, isLoaded: isUserLoaded } = useUser()
   const router = useRouter()

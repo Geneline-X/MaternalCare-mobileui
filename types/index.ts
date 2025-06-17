@@ -85,12 +85,54 @@ export interface ChartData {
   }[];
 }
 
+export type SenderType = 'patient' | 'doctor' | 'system';
+
+export interface ChatMessage {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderType: SenderType;
+  content: string;
+  timestamp: string;
+  type: 'text' | 'voice';
+  status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+  metadata?: {
+    duration?: number;
+    size?: number;
+    mimeType?: string;
+  };
+}
+
+export interface RoomStatus {
+  roomId: string;
+  isActive: boolean;
+  participants: string[];
+  lastActivity: string;
+  unreadCount?: number;
+}
+
+export interface ChatState {
+  messages: ChatMessage[];
+  isConnected: boolean;
+  isLoading: boolean;
+  error: string | null;
+  activeRoom: string | null;
+  unreadCounts: Record<string, number>;
+}
+
 export interface Message {
   id: string;
   text: string;
-  sender: 'me' | 'other';
-  timestamp?: Date;
+  sender: SenderType;
+  timestamp: string;
+  messageType?: 'text' | 'voice';
+  voiceUrl?: string;
+  status?: 'sent' | 'delivered' | 'read';
+  audioUrl?: string;
+  contentType?: string;
+  metadata?: VoiceMetadata | Record<string, unknown>;
 }
+
 
 export interface Appointment {
   id: string;
@@ -123,4 +165,60 @@ export interface FormField {
     max?: number;
     pattern?: string;
   };
+}
+
+export interface RoomStatus {
+  roomId: string;
+  patientId: string;
+  doctorId: string | null;
+  directMode: boolean;
+  currentOverrideId: string | null;
+  messages: Message[];
+}
+
+export interface SocketConfig {
+  url: string;
+  options?: {
+    reconnectionAttempts?: number;
+    reconnectionDelay?: number;
+    autoConnect?: boolean;
+    auth?: {
+      token?: string;
+    };
+  };
+}
+
+export interface JoinRoomParams {
+  roomId: string;
+  userId: string;
+  userName?: string;
+  isDoctor?: boolean;
+}
+
+export interface SendMessageParams {
+  roomId: string;
+  senderId: string;
+  senderType: SenderType;
+  content: string;
+  type?: 'text' | 'voice';
+  metadata?: Record<string, unknown>;
+}
+
+export interface VoiceMessageParams extends Omit<SendMessageParams, 'type'> {
+  duration: number;
+  audioData: string; // base64 encoded audio
+}
+
+export interface ChatEventCallbacks {
+  onMessage?: (message: ChatMessage) => void;
+  onRoomStatus?: (status: RoomStatus) => void;
+  onError?: (error: Error) => void;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+}
+export interface VoiceMetadata {
+  uri: string;
+  duration: number;
+  size?: number;
+  mimeType?: string;
 }
