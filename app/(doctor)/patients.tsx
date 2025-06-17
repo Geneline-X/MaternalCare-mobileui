@@ -7,6 +7,7 @@ import { Colors } from "@/constants/colors"
 import { useFocusEffect } from "@react-navigation/native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useRouter } from "expo-router"
+import { apiClient } from "@/utils/api"
 
 interface Patient {
   id: string
@@ -79,11 +80,10 @@ export default function Patients() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
-    // Simulate fetching data
-    setTimeout(() => {
-      setPatients(patientsData) // Reset to original data
+    apiClient.getPatients().then((res) => {
+      setPatients(res)
       setRefreshing(false)
-    }, 1000)
+    })
   }, [])
 
   useFocusEffect(
