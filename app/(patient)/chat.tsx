@@ -291,6 +291,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 8,
     minHeight: 50,
+    marginBottom: 35,
   },
   attachButton: {
     marginRight: 10,

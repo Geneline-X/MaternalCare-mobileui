@@ -125,15 +125,15 @@ class ApiClient {
 
   // Patient endpoints
   async getPatients(page = 1, limit = 20): Promise<any> {
-    return this.request(`/Patient?_page=${page}&_count=${limit}`);
+    return this.request(`fhir/Patient?_page=${page}&_count=${limit}`);
   }
 
   async getPatient(id: string): Promise<any> {
-    return this.request(`/Patient/${id}`);
+    return this.request(`fhir/Patient/${id}`);
   }
 
   async createPatient(patientData: any): Promise<any> {
-    return this.request('/Patient', {
+    return this.request('fhir/Patient', {
       method: 'POST',
       body: JSON.stringify(patientData),
     });
@@ -142,11 +142,11 @@ class ApiClient {
   // Pregnancy endpoints
   async getPregnancies(patientId?: string): Promise<any> {
     const query = patientId ? `?patient=${patientId}` : '';
-    return this.request(`/Pregnancy${query}`);
+    return this.request(`fhir/Pregnancy${query}`);
   }
 
   async createPregnancy(pregnancyData: any): Promise<any> {
-    return this.request('/Pregnancy', {
+    return this.request('fhir/Pregnancy', {
       method: 'POST',
       body: JSON.stringify(pregnancyData),
     });
@@ -155,11 +155,11 @@ class ApiClient {
   // Observation endpoints
   async getObservations(patientId?: string): Promise<any> {
     const query = patientId ? `?patient=${patientId}` : '';
-    return this.request(`/Observation${query}`);
+    return this.request(`fhir/Observation${query}`);
   }
 
   async createObservation(observationData: any): Promise<any> {
-    return this.request('/Observation', {
+    return this.request('fhir/Observation', {
       method: 'POST',
       body: JSON.stringify(observationData),
     });
@@ -167,20 +167,20 @@ class ApiClient {
 
   // Notification endpoints
   async getNotifications(): Promise<any> {
-    return this.request('/Notification');
+    return this.request('fhir/Notification');
   }
 
   async markNotificationRead(id: string): Promise<any> {
-    return this.request(`/Notification/${id}/read`, { method: 'POST' });
+    return this.request(`/fhir/Notification/${id}/read`, { method: 'POST' });
   }
 
   // Form endpoints
   async getDynamicForm(id: string): Promise<any> {
-    return this.request(`/DynamicForm/${id}`);
+    return this.request(`fhir/DynamicForm/${id}`);
   }
 
   async submitDynamicForm(formId: string, data: any): Promise<any> {
-    return this.request(`/DynamicForm/${formId}/submit`, {
+    return this.request(`fhir/DynamicForm/${formId}/submit`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
