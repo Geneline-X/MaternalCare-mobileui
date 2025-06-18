@@ -113,17 +113,17 @@ const PatientChatScreen: React.FC = () => {
 
   // Format time for message timestamp
   const formatTime = (timestamp: string | number): string => {
-    // Convert to number if it's a string that can be parsed as a number
-    const timestampNum = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
-    const date = new Date(timestampNum);
-    
-    // Check if the date is valid
-    if (isNaN(date.getTime())) {
-      console.warn('Invalid timestamp:', timestamp);
-      return '--:--';
+    try {
+      const date = new Date(timestamp)
+      if (isNaN(date.getTime())) {
+        console.warn("Invalid timestamp:", timestamp)
+        return "--:--"
+      }
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    } catch (error) {
+      console.warn("Error formatting timestamp:", timestamp, error)
+      return "--:--"
     }
-    
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
   // Handle sending a text message
@@ -176,6 +176,8 @@ const PatientChatScreen: React.FC = () => {
           const base64Audio = await blobToBase64(blob)
 
           const duration = status.isLoaded ? (status.durationMillis ?? 0) : 0
+
+          // Use the updated sendVoiceMessage that returns a Promise
           await sendVoiceMessage(base64Audio, duration)
 
           await sound.unloadAsync()
@@ -304,7 +306,7 @@ const PatientChatScreen: React.FC = () => {
 
           {messages.map((message, index) => {
             const sender = getMessageSender(message)
-            const isMyMessage = message.sender === "patient"
+            const isMyMessage = message.senderType === "patient" && message.senderId === user?.id
 
             return (
               <View
@@ -324,12 +326,18 @@ const PatientChatScreen: React.FC = () => {
                   </View>
                 )}
 
-                {message.contentType === "voice" ? (
+                {message.messageType === "voice" || message.contentType === "voice" ? (
                   <TouchableOpacity
                     style={styles.voiceMessage}
                     onPress={async () => {
                       try {
-                        const { sound } = await Audio.Sound.createAsync({ uri: message.audioUrl! }, { shouldPlay: true })
+                        const audioUrl = message.audioUrl || message.voiceUrl
+                        if (!audioUrl) {
+                          Alert.alert("Error", "Voice message not available")
+                          return
+                        }
+
+                        const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true })
                         await sound.playAsync()
                         sound.setOnPlaybackStatusUpdate((status) => {
                           if (!status.isLoaded) return
@@ -346,7 +354,9 @@ const PatientChatScreen: React.FC = () => {
                     <View style={styles.voiceMessageContent}>
                       <Ionicons name="play" size={20} color={isMyMessage ? "white" : Colors.primary[600]} />
                       <Text style={[styles.voiceDuration, { color: isMyMessage ? "white" : Colors.primary[600] }]}>
-                        {message.metadata?.duration ? `${Math.floor(Number(message.metadata.duration) / 1000)}s` : "Play"}
+                        {message.metadata?.duration
+                          ? `${Math.floor(Number(message.metadata.duration) / 1000)}s`
+                          : "Play"}
                       </Text>
                     </View>
                   </TouchableOpacity>

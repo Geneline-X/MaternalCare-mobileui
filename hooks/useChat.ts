@@ -28,10 +28,11 @@ interface UseChatReturn {
   activeRooms: ConsultationRoom[]
   directMode: boolean
   sendMessage: (content: string) => void
-  sendVoiceMessage: (audioData: string, duration: number) => void
+  sendVoiceMessage: (audioData: string, duration: number) => Promise<void>
   joinRoom: (roomId: string) => Promise<void>
   createConsultation: () => Promise<string>
   toggleDoctorMode: (enable: boolean) => Promise<void>
+  queryPatientData: (query: string) => Promise<string>
   clearError: () => void
 }
 
@@ -93,6 +94,20 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 
           if (notification.type === "doctorModeChanged") {
             setDirectMode(notification.data?.directMode || false)
+          }
+
+          if (notification.type === "doctorJoined") {
+            // Add system message for doctor joining
+            const systemMessage: Message = {
+              id: `system-${Date.now()}`,
+              content: notification.message,
+              sender: "system",
+              senderId: "system",
+              timestamp: notification.timestamp,
+              messageType: "text",
+              senderType: "system",
+            }
+            setMessages((prev) => [...prev, systemMessage])
           }
         })
 
@@ -157,7 +172,7 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
       setIsConnected(false)
       callbacks?.onDisconnect?.()
     }
-  }, []) // Remove dependencies to prevent re-initialization
+  }, [])
 
   // Create consultation room for patients
   const createConsultation = useCallback(async (): Promise<string> => {
@@ -179,6 +194,18 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
+
+      // Add welcome message
+      const welcomeMessage: Message = {
+        id: `welcome-${Date.now()}`,
+        content: "Welcome to your medical consultation. How can I help you today?",
+        sender: "system",
+        senderId: "system",
+        timestamp: new Date().toISOString(),
+        messageType: "text",
+        senderType: "system",
+      }
+      setMessages([welcomeMessage])
 
       console.log("Consultation created successfully:", response.roomId)
       return response.roomId
@@ -209,6 +236,18 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
             setMessages(response.room.messages)
           }
         }
+
+        // Add system message
+        const systemMessage: Message = {
+          id: `system-${Date.now()}`,
+          content: `You have joined the consultation for patient ${response.room?.patientId || "Unknown"}`,
+          sender: "system",
+          senderId: "system",
+          timestamp: new Date().toISOString(),
+          messageType: "text",
+          senderType: "system",
+        }
+        setMessages((prev) => [...prev, systemMessage])
 
         console.log("Successfully joined room:", roomId)
       } catch (err) {
@@ -242,14 +281,29 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
 
   // Send voice message
   const sendVoiceMessage = useCallback(
-    (audioData: string, duration: number) => {
+    async (audioData: string, duration: number): Promise<void> => {
       if (!currentRoomId.current) {
         setError("No active room")
         return
       }
 
-      console.log("Sending voice message, duration:", duration)
-      medicalChatService.sendVoiceMessage(currentRoomId.current, userId, userType, audioData, duration)
+      try {
+        console.log("Sending voice message, duration:", duration)
+        const response = await medicalChatService.sendVoiceMessage(
+          currentRoomId.current,
+          userId,
+          userType,
+          audioData,
+          duration,
+        )
+
+        console.log("Voice message sent successfully:", response)
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to send voice message"
+        console.error("Failed to send voice message:", errorMessage)
+        setError(errorMessage)
+        throw new Error(errorMessage)
+      }
     },
     [userId, userType],
   )
@@ -281,6 +335,41 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
     [userId, userType, userName],
   )
 
+  // Query patient data
+  const queryPatientData = useCallback(
+    async (query: string): Promise<string> => {
+      if (userType !== "doctor" || !currentRoomId.current) {
+        throw new Error("Only doctors can query patient data")
+      }
+
+      try {
+        console.log("Querying patient data:", query)
+        const response = await medicalChatService.queryPatientData(currentRoomId.current, userId, query)
+
+        // Add the insight as an AI message
+        const aiMessage: Message = {
+          id: `ai-insight-${Date.now()}`,
+          content: response.insight,
+          sender: "ai",
+          senderId: "ai-medical-assistant",
+          timestamp: new Date().toISOString(),
+          messageType: "text",
+          senderType: "ai",
+          senderName: "AI Assistant",
+        }
+        setMessages((prev) => [...prev, aiMessage])
+
+        return response.insight
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to query patient data"
+        console.error("Failed to query patient data:", errorMessage)
+        setError(errorMessage)
+        throw new Error(errorMessage)
+      }
+    },
+    [userId, userType],
+  )
+
   const clearError = useCallback(() => {
     setError(null)
   }, [])
@@ -298,6 +387,7 @@ export const useChat = (options: UseChatOptions): UseChatReturn => {
     joinRoom,
     createConsultation,
     toggleDoctorMode,
+    queryPatientData,
     clearError,
   }
 }

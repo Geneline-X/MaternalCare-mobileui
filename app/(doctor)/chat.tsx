@@ -1,4 +1,7 @@
 "use client"
+
+import type React from "react"
+
 import { useState, useRef, useCallback, useEffect } from "react"
 import { SafeAreaView } from "react-native-safe-area-context"
 import {
@@ -12,29 +15,41 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  StyleSheet,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useLocalSearchParams } from "expo-router"
 import { useUser } from "@clerk/clerk-expo"
 import { Audio } from "expo-av"
 import { Colors } from "../../constants/colors"
-import { StyleSheet } from "react-native"
 import { useChat } from "@/hooks/useChat"
 import { blobToBase64 } from "@/utils/audioUtils"
-import type { ChatNotification } from "@/types/index"
+import type { ChatNotification, Message } from "@/types/index"
 
-const DoctorChatScreen = () => {
-  const params = useLocalSearchParams()
+interface MessageSender {
+  name: string
+  isAI: boolean
+  isDoctor: boolean
+}
+
+const DoctorChatScreen: React.FC = () => {
+  const params = useLocalSearchParams<{
+    roomId: string
+    patientId: string
+    patientName: string
+  }>()
   const { user } = useUser()
-  const [inputText, setInputText] = useState("")
-  const [isRecording, setIsRecording] = useState(false)
-  const [showModeToggle, setShowModeToggle] = useState(false)
+  const [inputText, setInputText] = useState<string>("")
+  const [isRecording, setIsRecording] = useState<boolean>(false)
+  const [showModeToggle, setShowModeToggle] = useState<boolean>(false)
+  const [queryText, setQueryText] = useState<string>("")
+  const [isQuerying, setIsQuerying] = useState<boolean>(false)
   const mediaRecorderRef = useRef<Audio.Recording | null>(null)
   const scrollViewRef = useRef<ScrollView>(null)
 
-  const roomId = params.roomId as string
-  const patientId = params.patientId as string
-  const patientName = (params.patientName as string) || "Patient"
+  const roomId = params.roomId || ""
+  const patientId = params.patientId || ""
+  const patientName = params.patientName || "Patient"
 
   const {
     messages,
@@ -46,6 +61,7 @@ const DoctorChatScreen = () => {
     sendVoiceMessage,
     joinRoom,
     toggleDoctorMode,
+    queryPatientData,
     clearError,
   } = useChat({
     roomId,
@@ -55,7 +71,6 @@ const DoctorChatScreen = () => {
     callbacks: {
       onError: (err: Error) => {
         console.error("Doctor chat error:", err)
-        // Don't show alert for websocket errors in mock mode
         if (!err.message.includes("websocket")) {
           Alert.alert("Error", err.message)
         }
@@ -71,16 +86,38 @@ const DoctorChatScreen = () => {
     },
   })
 
-  // Join room on mount
+  const handleQueryPatientData = useCallback(async (): Promise<void> => {
+    if (!queryText.trim()) {
+      Alert.alert("Error", "Please enter a query")
+      return
+    }
+
+    if (!queryPatientData) {
+      Alert.alert("Error", "Query function not available")
+      return
+    }
+
+    try {
+      setIsQuerying(true)
+      const insight = await queryPatientData(queryText.trim())
+      setQueryText("")
+      Alert.alert("Patient Data Insight", insight)
+    } catch (err) {
+      console.error("Failed to query patient data:", err)
+      Alert.alert("Error", "Failed to query patient data")
+    } finally {
+      setIsQuerying(false)
+    }
+  }, [queryText, queryPatientData])
+
   useEffect(() => {
-    const joinRoomAsync = async () => {
+    const joinRoomAsync = async (): Promise<void> => {
       if (roomId && isConnected && !isLoading) {
         try {
           await joinRoom(roomId)
           console.log("Successfully joined room:", roomId)
         } catch (err) {
           console.error("Failed to join room:", err)
-          // Don't show error for mock mode
           if (err instanceof Error && !err.message.includes("mock")) {
             Alert.alert("Error", "Failed to join consultation room")
           }
@@ -88,22 +125,22 @@ const DoctorChatScreen = () => {
       }
     }
 
-    joinRoomAsync()
-  }, [roomId, isConnected, isLoading]) // Remove joinRoom from dependencies to prevent loops
+    void joinRoomAsync()
+  }, [roomId, isConnected, isLoading, joinRoom])
 
-  const formatTime = (timestamp: string) => {
+  const formatTime = useCallback((timestamp: string): string => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  }
+  }, [])
 
-  const handleSendMessage = useCallback(() => {
+  const handleSendMessage = useCallback((): void => {
     if (!inputText.trim()) return
 
     sendMessage(inputText.trim())
     setInputText("")
   }, [inputText, sendMessage])
 
-  const handleStartRecording = useCallback(async () => {
+  const handleStartRecording = useCallback(async (): Promise<void> => {
     try {
       const { status } = await Audio.requestPermissionsAsync()
       if (status !== "granted") {
@@ -127,7 +164,7 @@ const DoctorChatScreen = () => {
     }
   }, [])
 
-  const handleStopRecording = useCallback(async () => {
+  const handleStopRecording = useCallback(async (): Promise<void> => {
     if (!mediaRecorderRef.current) return
 
     try {
@@ -143,6 +180,7 @@ const DoctorChatScreen = () => {
           const base64Audio = await blobToBase64(blob)
 
           const duration = status.isLoaded ? (status.durationMillis ?? 0) : 0
+
           await sendVoiceMessage(base64Audio, duration)
 
           await sound.unloadAsync()
@@ -160,7 +198,7 @@ const DoctorChatScreen = () => {
     }
   }, [sendVoiceMessage])
 
-  const handleToggleMode = async () => {
+  const handleToggleMode = useCallback(async (): Promise<void> => {
     try {
       await toggleDoctorMode(!directMode)
       Alert.alert(
@@ -173,17 +211,36 @@ const DoctorChatScreen = () => {
       console.error("Failed to toggle mode:", err)
       Alert.alert("Error", "Failed to change communication mode")
     }
-  }
+  }, [directMode, toggleDoctorMode])
 
-  const getMessageSender = (message: any) => {
-    if (message.senderType === "ai") {
-      return { name: "AI Assistant", isAI: true, isDoctor: false }
-    } else if (message.senderType === "doctor") {
-      return { name: message.senderName || "Doctor", isAI: false, isDoctor: true }
-    } else {
-      return { name: patientName, isAI: false, isDoctor: false }
+  const getMessageSender = useCallback(
+    (message: Message): MessageSender => {
+      if (message.senderType === "ai") {
+        return { name: "AI Assistant", isAI: true, isDoctor: false }
+      } else if (message.senderType === "doctor") {
+        return { name: message.senderName || "Doctor", isAI: false, isDoctor: true }
+      } else {
+        return { name: patientName, isAI: false, isDoctor: false }
+      }
+    },
+    [patientName],
+  )
+
+  const handlePlayVoiceMessage = useCallback(async (audioUrl: string): Promise<void> => {
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: audioUrl }, { shouldPlay: true })
+      await sound.playAsync()
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status.isLoaded) return
+        if (status.didJustFinish) {
+          void sound.unloadAsync()
+        }
+      })
+    } catch (err) {
+      console.error("Error playing audio:", err)
+      Alert.alert("Error", "Failed to play voice message")
     }
-  }
+  }, [])
 
   if (isLoading) {
     return (
@@ -294,7 +351,7 @@ const DoctorChatScreen = () => {
 
           {messages.map((message, index) => {
             const sender = getMessageSender(message)
-            const isMyMessage = message.sender === "doctor" && message.senderId === user?.id
+            const isMyMessage = message.senderType === "doctor" && message.senderId === user?.id
 
             return (
               <View
@@ -326,29 +383,17 @@ const DoctorChatScreen = () => {
                   </View>
                 )}
 
-                {message.contentType === "voice" ? (
+                {message.contentType === "voice" && message.audioUrl ? (
                   <TouchableOpacity
                     style={styles.voiceMessage}
-                    onPress={async () => {
-                      try {
-                        const { sound } = await Audio.Sound.createAsync({ uri: message.audioUrl! }, { shouldPlay: true })
-                        await sound.playAsync()
-                        sound.setOnPlaybackStatusUpdate((status) => {
-                          if (!status.isLoaded) return
-                          if (status.didJustFinish) {
-                            sound.unloadAsync().catch(console.error)
-                          }
-                        })
-                      } catch (err) {
-                        console.error("Error playing audio:", err)
-                        Alert.alert("Error", "Failed to play voice message")
-                      }
-                    }}
+                    onPress={() => handlePlayVoiceMessage(message.audioUrl!)}
                   >
                     <View style={styles.voiceMessageContent}>
                       <Ionicons name="play" size={20} color={isMyMessage ? "white" : Colors.primary[600]} />
                       <Text style={[styles.voiceDuration, { color: isMyMessage ? "white" : Colors.primary[600] }]}>
-                        {message.metadata?.duration ? `${Math.floor(Number(message.metadata.duration) / 1000)}s` : "Play"}
+                        {message.metadata?.duration
+                          ? `${Math.floor(Number(message.metadata.duration) / 1000)}s`
+                          : "Play"}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -412,6 +457,33 @@ const DoctorChatScreen = () => {
                 </TouchableOpacity>
               )}
             </View>
+
+            {/* Patient Data Query Section */}
+            {typeof queryPatientData === "function" && (
+              <View style={styles.querySection}>
+                <Text style={styles.querySectionTitle}>Query Patient Data</Text>
+                <View style={styles.queryRow}>
+                  <TextInput
+                    style={styles.queryInput}
+                    value={queryText}
+                    onChangeText={setQueryText}
+                    placeholder="Ask about patient data (e.g., 'Give me a summary')"
+                    placeholderTextColor="#999"
+                  />
+                  <TouchableOpacity
+                    style={[styles.queryButton, (isQuerying || !queryText.trim()) && styles.queryButtonDisabled]}
+                    onPress={handleQueryPatientData}
+                    disabled={isQuerying || !queryText.trim()}
+                  >
+                    {isQuerying ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <Ionicons name="search" size={16} color="white" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         )}
 
@@ -791,6 +863,44 @@ const styles = StyleSheet.create({
     color: "#92400E",
     textAlign: "center",
     flex: 1,
+  },
+  querySection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F0F0",
+  },
+  querySectionTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 8,
+  },
+  queryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  queryInput: {
+    flex: 1,
+    backgroundColor: "#F8F9FA",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: "#333",
+  },
+  queryButton: {
+    backgroundColor: Colors.primary[600],
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queryButtonDisabled: {
+    backgroundColor: "#CCC",
   },
 })
 
