@@ -304,7 +304,7 @@ const PatientHome: React.FC = () => {
             <Text style={styles.actionText}>Log Symptoms</Text>
             <Text style={styles.actionSubtext}>Track daily</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={() => router.push("./chat")}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => router.push("/(patient)/chat")}>
             <View style={[styles.actionIcon, { backgroundColor: "#E8F5E8" }]}>
               <Ionicons name="chatbubble-outline" size={24} color="#4CAF50" />
             </View>

@@ -1,245 +1,303 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Alert } from 'react-native';
-import { io, Socket } from 'socket.io-client';
-import { ChatMessage, RoomStatus, SenderType } from '@/types';
-import config from '@/config';
+"use client"
 
-interface UseChatParams {
-  roomId: string;
-  userId: string;
-  socketUrl?: string;
+import { useState, useEffect, useCallback, useRef } from "react"
+import { medicalChatService } from "../services/socket"
+import type { Message, ConsultationRoom, MedicalContext, ChatNotification } from "../types/index"
+import config from "../config"
+
+interface UseChatOptions {
+  roomId?: string
+  userId: string
+  userType: "patient" | "doctor"
+  userName?: string
+  medicalContext?: MedicalContext
   callbacks?: {
-    onMessage?: (message: ChatMessage) => void;
-    onRoomStatus?: (status: RoomStatus) => void;
-    onError?: (error: Error) => void;
-    onConnect?: () => void;
-    onDisconnect?: () => void;
-  };
+    onError?: (error: Error) => void
+    onConnect?: () => void
+    onDisconnect?: () => void
+    onNotification?: (notification: ChatNotification) => void
+  }
 }
 
-export const useChat = ({
-  roomId,
-  userId,
-  socketUrl = config.SOCKET_URL,
-  callbacks = {},
-}: UseChatParams) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [roomStatus, setRoomStatus] = useState<RoomStatus | null>(null);
-  const socketRef = useRef<Socket | null>(null);
+interface UseChatReturn {
+  messages: Message[]
+  isConnected: boolean
+  isLoading: boolean
+  error: string | null
+  currentRoom: ConsultationRoom | null
+  activeRooms: ConsultationRoom[]
+  directMode: boolean
+  sendMessage: (content: string) => void
+  sendVoiceMessage: (audioData: string, duration: number) => void
+  joinRoom: (roomId: string) => Promise<void>
+  createConsultation: () => Promise<string>
+  toggleDoctorMode: (enable: boolean) => Promise<void>
+  clearError: () => void
+}
+
+export const useChat = (options: UseChatOptions): UseChatReturn => {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isConnected, setIsConnected] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [currentRoom, setCurrentRoom] = useState<ConsultationRoom | null>(null)
+  const [activeRooms, setActiveRooms] = useState<ConsultationRoom[]>([])
+  const [directMode, setDirectMode] = useState(false)
+
+  const { userId, userType, userName, medicalContext, callbacks } = options
+  const currentRoomId = useRef<string | null>(options.roomId || null)
+  const isInitialized = useRef(false)
 
   // Initialize socket connection
   useEffect(() => {
-    if (!socketUrl) {
-      setError('Socket URL is not configured');
-      setIsLoading(false);
-      return;
+    if (isInitialized.current) return
+    isInitialized.current = true
+
+    const initializeSocket = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+
+        console.log("Initializing socket connection to:", config.SOCKET_URL)
+
+        medicalChatService.initialize({
+          url: config.SOCKET_URL,
+          options: {
+            reconnectionAttempts: 5,
+            reconnectionDelay: 2000,
+            autoConnect: true,
+          },
+        })
+
+        // Set up event listeners
+        const unsubscribeMessage = medicalChatService.onMessage((message: Message) => {
+          console.log("Received message:", message)
+          setMessages((prev) => {
+            // Avoid duplicates
+            if (prev.find((m) => m.id === message.id)) return prev
+            return [...prev, message]
+          })
+        })
+
+        const unsubscribeRoomStatus = medicalChatService.onRoomStatus((status) => {
+          console.log("Room status update:", status)
+          setDirectMode(status.directMode || false)
+          if (status.messages) {
+            setMessages(status.messages)
+          }
+        })
+
+        const unsubscribeNotification = medicalChatService.onNotification((notification) => {
+          console.log("Received notification:", notification)
+          callbacks?.onNotification?.(notification)
+
+          if (notification.type === "doctorModeChanged") {
+            setDirectMode(notification.data?.directMode || false)
+          }
+        })
+
+        const unsubscribeRoomList = medicalChatService.onRoomListUpdate((rooms) => {
+          console.log("Room list update:", rooms)
+          setActiveRooms(rooms)
+        })
+
+        const unsubscribeError = medicalChatService.onError((err) => {
+          console.error("Socket error:", err)
+          setError(err.message)
+          callbacks?.onError?.(err)
+        })
+
+        // Wait for connection
+        const checkConnection = () => {
+          if (medicalChatService.socket?.connected) {
+            setIsConnected(true)
+            setIsLoading(false)
+            callbacks?.onConnect?.()
+
+            // Auto-login for doctors
+            if (userType === "doctor") {
+              medicalChatService
+                .doctorLogin(userId, userName || "Doctor")
+                .then((response) => {
+                  console.log("Doctor logged in:", response)
+                  setActiveRooms(response.activeRooms)
+                })
+                .catch((err) => {
+                  console.error("Doctor login failed:", err)
+                  setError(err.message)
+                })
+            }
+          } else {
+            setTimeout(checkConnection, 1000)
+          }
+        }
+
+        setTimeout(checkConnection, 1000)
+
+        // Cleanup function
+        return () => {
+          unsubscribeMessage()
+          unsubscribeRoomStatus()
+          unsubscribeNotification()
+          unsubscribeRoomList()
+          unsubscribeError()
+        }
+      } catch (err) {
+        console.error("Socket initialization failed:", err)
+        setError(err instanceof Error ? err.message : "Connection failed")
+        setIsLoading(false)
+        callbacks?.onError?.(err instanceof Error ? err : new Error("Connection failed"))
+      }
     }
 
-    setIsLoading(true);
-    
+    initializeSocket()
+
+    return () => {
+      medicalChatService.disconnect()
+      setIsConnected(false)
+      callbacks?.onDisconnect?.()
+    }
+  }, []) // Remove dependencies to prevent re-initialization
+
+  // Create consultation room for patients
+  const createConsultation = useCallback(async (): Promise<string> => {
+    if (userType !== "patient" || !medicalContext) {
+      throw new Error("Only patients can create consultations")
+    }
+
     try {
-      // Initialize socket connection
-      const socket = io(socketUrl, {
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        autoConnect: true,
-        auth: {
-          token: userId, // You might want to use a proper JWT token here
-        },
-      });
+      console.log("Creating consultation for patient:", userId)
+      const response = await medicalChatService.joinConsultation(userId, userName || "Patient", medicalContext)
 
-      socketRef.current = socket;
+      currentRoomId.current = response.roomId
+      setCurrentRoom({
+        id: response.roomId,
+        patientId: userId,
+        patientName: userName,
+        status: "active",
+        directMode: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
 
-      // Connection established
-      const handleConnect = () => {
-        console.log('Connected to chat server');
-        setIsConnected(true);
-        setError(null);
-        callbacks.onConnect?.();
-        
-        // Join the room after connection
-        socket.emit('joinRoom', { roomId, userId });
-      };
-
-      // Handle incoming messages
-      const handleMessage = (message: ChatMessage) => {
-        setMessages(prev => [...prev, message]);
-        callbacks.onMessage?.(message);
-      };
-
-      // Handle room status updates
-      const handleRoomStatus = (status: RoomStatus) => {
-        setRoomStatus(status);
-        callbacks.onRoomStatus?.(status);
-      };
-
-      // Handle errors
-      const handleError = (error: Error) => {
-        console.error('Socket error:', error);
-        setError(error.message);
-        callbacks.onError?.(error);
-      };
-
-      // Handle disconnection
-      const handleDisconnect = () => {
-        setIsConnected(false);
-        callbacks.onDisconnect?.();
-      };
-
-      // Set up event listeners
-      socket.on('connect', handleConnect);
-      socket.on('message', handleMessage);
-      socket.on('roomStatus', handleRoomStatus);
-      socket.on('error', handleError);
-      socket.on('disconnect', handleDisconnect);
-
-      // Connect to the socket
-      socket.connect();
-
-      // Clean up on unmount
-      return () => {
-        socket.off('connect', handleConnect);
-        socket.off('message', handleMessage);
-        socket.off('roomStatus', handleRoomStatus);
-        socket.off('error', handleError);
-        socket.off('disconnect', handleDisconnect);
-        
-        if (socket.connected) {
-          socket.disconnect();
-        }
-      };
+      console.log("Consultation created successfully:", response.roomId)
+      return response.roomId
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Failed to connect to chat server');
-      console.error('Connection error:', error);
-      setError(error.message);
-      callbacks.onError?.(error);
-    } finally {
-      setIsLoading(false);
+      const errorMessage = err instanceof Error ? err.message : "Failed to create consultation"
+      console.error("Failed to create consultation:", errorMessage)
+      setError(errorMessage)
+      throw new Error(errorMessage)
     }
-  }, [roomId, userId, socketUrl]);
+  }, [userId, userType, userName, medicalContext])
 
-  // Send a text message
-  const sendMessage = useCallback((content: string) => {
-    if (!socketRef.current?.connected) {
-      Alert.alert('Connection Error', 'Not connected to the chat server');
-      return;
-    }
-
-    const message: Omit<ChatMessage, 'id' | 'timestamp' | 'status'> = {
-      roomId,
-      senderId: userId,
-      senderType: 'patient',
-      content,
-      type: 'text',
-    };
-
-    // Optimistic update
-    const tempId = Date.now().toString();
-    const tempMessage: ChatMessage = {
-      ...message,
-      id: tempId,
-      timestamp: new Date().toISOString(),
-      status: 'sending',
-    };
-    
-    setMessages(prev => [...prev, tempMessage]);
-    
-    // Emit the message
-    socketRef.current.emit('sendMessage', message, (ack: { success: boolean; error?: string; messageId?: string }) => {
-      if (!ack.success) {
-        // Update message status to failed
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === tempId 
-              ? { ...msg, status: 'failed' } 
-              : msg
-          )
-        );
-        Alert.alert('Error', ack.error || 'Failed to send message');
-      } else {
-        // Update message with server-generated ID and status
-        setMessages(prev => 
-          prev.map(msg => 
-            msg.id === tempId
-              ? { ...msg, id: ack.messageId || tempId, status: 'sent' }
-              : msg
-          )
-        );
+  // Join existing room (for doctors)
+  const joinRoom = useCallback(
+    async (roomId: string): Promise<void> => {
+      if (userType !== "doctor") {
+        throw new Error("Only doctors can join rooms")
       }
-    });
-  }, [roomId, userId]);
 
-  // Send a voice message
-  const sendVoiceMessage = useCallback(async (audioData: string, duration: number) => {
-    if (!socketRef.current?.connected) {
-      Alert.alert('Connection Error', 'Not connected to the chat server');
-      return;
-    }
+      try {
+        console.log("Doctor joining room:", roomId)
+        const response = await medicalChatService.doctorJoinRoom(roomId, userId, userName || "Doctor")
+        currentRoomId.current = roomId
 
-    const message: Omit<ChatMessage, 'id' | 'timestamp' | 'status'> = {
-      roomId,
-      senderId: userId,
-      senderType: 'patient',
-      content: 'Voice message',
-      type: 'voice',
-      metadata: {
-        duration,
-        mimeType: 'audio/webm',
-      },
-    };
-
-    // Optimistic update
-    const tempId = Date.now().toString();
-    const tempMessage: ChatMessage = {
-      ...message,
-      id: tempId,
-      timestamp: new Date().toISOString(),
-      status: 'sending',
-    };
-    
-    setMessages(prev => [...prev, tempMessage]);
-    
-    // Emit the voice message
-    socketRef.current.emit(
-      'sendVoiceMessage',
-      {
-        ...message,
-        audioData,
-        duration,
-      },
-      (ack: { success: boolean; error?: string; messageId?: string }) => {
-        if (ack.success) {
-          // Update message with server-generated ID and status
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === tempId
-                ? { ...msg, id: ack.messageId || tempId, status: 'sent' }
-                : msg
-            )
-          );
-        } else {
-          // Update message status to failed
-          setMessages(prev =>
-            prev.map(msg =>
-              msg.id === tempId ? { ...msg, status: 'failed' } : msg
-            )
-          );
-          Alert.alert('Error', ack.error || 'Failed to send voice message');
+        // Set current room and messages
+        if (response.room) {
+          setCurrentRoom(response.room)
+          if (response.room.messages) {
+            setMessages(response.room.messages)
+          }
         }
+
+        console.log("Successfully joined room:", roomId)
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to join room"
+        console.error("Failed to join room:", errorMessage)
+        setError(errorMessage)
+        throw new Error(errorMessage)
       }
-    );
-  }, [roomId, userId]);
+    },
+    [userId, userType, userName],
+  )
+
+  // Send text message
+  const sendMessage = useCallback(
+    (content: string) => {
+      if (!currentRoomId.current) {
+        setError("No active room")
+        return
+      }
+
+      console.log("Sending message:", content)
+
+      if (userType === "patient") {
+        medicalChatService.sendPatientMessage(currentRoomId.current, userId, content)
+      } else if (userType === "doctor") {
+        medicalChatService.sendDoctorMessage(currentRoomId.current, userId, userName || "Doctor", content)
+      }
+    },
+    [userId, userType, userName],
+  )
+
+  // Send voice message
+  const sendVoiceMessage = useCallback(
+    (audioData: string, duration: number) => {
+      if (!currentRoomId.current) {
+        setError("No active room")
+        return
+      }
+
+      console.log("Sending voice message, duration:", duration)
+      medicalChatService.sendVoiceMessage(currentRoomId.current, userId, userType, audioData, duration)
+    },
+    [userId, userType],
+  )
+
+  // Toggle doctor mode (AI override)
+  const toggleDoctorMode = useCallback(
+    async (enable: boolean): Promise<void> => {
+      if (userType !== "doctor" || !currentRoomId.current) {
+        throw new Error("Only doctors can toggle direct mode")
+      }
+
+      try {
+        console.log("Toggling doctor mode to:", enable)
+        const response = await medicalChatService.toggleDoctorMode(
+          currentRoomId.current,
+          userId,
+          userName || "Doctor",
+          enable,
+        )
+        setDirectMode(response.directMode)
+        console.log("Doctor mode toggled successfully:", response.directMode)
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to toggle doctor mode"
+        console.error("Failed to toggle doctor mode:", errorMessage)
+        setError(errorMessage)
+        throw new Error(errorMessage)
+      }
+    },
+    [userId, userType, userName],
+  )
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
 
   return {
     messages,
     isConnected,
     isLoading,
     error,
-    roomStatus,
+    currentRoom,
+    activeRooms,
+    directMode,
     sendMessage,
     sendVoiceMessage,
-  };
-};
+    joinRoom,
+    createConsultation,
+    toggleDoctorMode,
+    clearError,
+  }
+}

@@ -6,86 +6,100 @@ export default function DoctorLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false,
         tabBarActiveTintColor: Colors.primary[600],
-        tabBarInactiveTintColor: Colors.neutral[500],
+        tabBarInactiveTintColor: "#666",
         tabBarStyle: {
-          backgroundColor: Colors.white,
+          backgroundColor: "white",
           borderTopWidth: 1,
-          borderTopColor: Colors.neutral[100],
-          shadowColor: "#000",
-          shadowOffset: {
-            width: 0,
-            height: -3,
-          },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 10,
-          paddingTop: 8,
-          height: 68,
+          borderTopColor: "#F0F0F0",
+          paddingBottom: 5,
+          paddingTop: 5,
+          height: 60,
         },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontFamily: "Inter-Medium",
-        },
+        headerShown: false,
       }}
     >
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: "Home",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "home" : "home-outline"} size={26} color={color} />
-          ),
+          title: "Dashboard",
+          tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="consultation-rooms"
+        options={{
+          title: "Consultations",
+          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="patients"
         options={{
           title: "Patients",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "people" : "people-outline"} size={26} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="chat"
         options={{
-          title: "Chat",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "chatbubble" : "chatbubble-outline"} size={26} color={color} />
-          ),
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="add-patient"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="add-pregnancy"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="dynamic-form"
+        options={{
+          href: null, // Hide from tab bar
         }}
       />
       <Tabs.Screen
         name="health-monitoring"
         options={{
-          title: "Health",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "heart" : "heart-outline"} size={26} color={color} />
-          ),
+          href: null, // Hide from tab bar
         }}
       />
-
-      {/* All other screens are hidden but accessible via navigation */}
-      <Tabs.Screen name="patient-details" options={{ href: null }} />
-      <Tabs.Screen name="dynamic-form" options={{ href: null }} />
-      <Tabs.Screen name="report-analytics" options={{ href: null }} />
-      <Tabs.Screen name="schedule-visit" options={{ href: null }} />
-      <Tabs.Screen name="settings" options={{ href: null }} />
-      <Tabs.Screen name="add-patient" options={{ href: null }} />
-      <Tabs.Screen name="add-pregnancy" options={{ href: null }} />
-      <Tabs.Screen name="notifications" options={{ href: null }} />
-      <Tabs.Screen name="settings/change-password" options={{ href: null }} />
-      <Tabs.Screen name="settings/connected-devices" options={{ href: null }} />
-      <Tabs.Screen name="settings/consent-management" options={{ href: null }} />
-      <Tabs.Screen name="settings/contact-support" options={{ href: null }} />
-      <Tabs.Screen name="settings/data-sharing" options={{ href: null }} />
-      <Tabs.Screen name="settings/edit-profile" options={{ href: null }} />
-      <Tabs.Screen name="settings/language" options={{ href: null }} />
-      <Tabs.Screen name="settings/personal-info" options={{ href: null }} />
-      <Tabs.Screen name="settings/privacy-security" options={{ href: null }} />
-      <Tabs.Screen name="settings/terms-privacy" options={{ href: null }} />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="patient-details"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="report-analytics"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="schedule-visit"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   )
 }
