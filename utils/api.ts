@@ -127,7 +127,7 @@ export class ApiClient {
       })
       const queryString = searchParams.toString()
       if (queryString) {
-        url += `?${queryString}`
+        url.search += `?${queryString}`
       }
     }
 
