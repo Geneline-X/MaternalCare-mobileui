@@ -101,30 +101,47 @@ export default function Patients() {
 
       // Try to fetch patients from FHIR endpoint
       try {
-        const patientsResponse = await requestManager.queueRequest("patients-list", () =>
-          apiClient.get("/api/fhir/Patient", {
-            _page: 1,
-            _count: 50,
-            _include: "Patient:pregnancy",
-          }),
-        )
-
+        const response = await apiClient.get("/api/users/patients")
+        
         if (mountedRef.current) {
-          if (patientsResponse && patientsResponse.data && Array.isArray(patientsResponse.data)) {
-            // Transform FHIR data to our format
-            const transformedPatients = patientsResponse.data.map((patient: any, index: number) => ({
-              id: patient.id || `patient-${index}`,
-              name: patient.name?.[0]?.given?.[0] + " " + patient.name?.[0]?.family || `Patient ${index + 1}`,
-              age: patient.birthDate ? new Date().getFullYear() - new Date(patient.birthDate).getFullYear() : 30,
-              phone: patient.telecom?.find((t: any) => t.system === "phone")?.value || "+1234567890",
-              condition: "Pregnancy - Active",
-              riskLevel: ["Low", "Medium", "High"][Math.floor(Math.random() * 3)] as "Low" | "Medium" | "High",
-              lastVisit: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-            }))
-            setPatients(transformedPatients)
+          if (response && Array.isArray(response)) {
+            const transformedPatients = response.map((patient: any) => {
+              // Parse the patient data from the API response
+              const firstName = patient.firstName || '';
+              const lastName = patient.lastName || '';
+              const fullName = `${firstName} ${lastName}`.trim() || 'Unnamed Patient';
+              
+              // Calculate age from date of birth if available
+              let age = 30; // Default age
+              if (patient.dateOfBirth) {
+                const birthDate = new Date(patient.dateOfBirth);
+                if (!isNaN(birthDate.getTime())) {
+                  const today = new Date();
+                  age = today.getFullYear() - birthDate.getFullYear();
+                  const monthDiff = today.getMonth() - birthDate.getMonth();
+                  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                    age--;
+                  }
+                }
+              }
+
+              
+              // Map the patient data to our UI format
+              return {
+                id: patient.id || `patient-${Math.random().toString(36).substr(2, 9)}`,
+                name: fullName,
+                age: age,
+                phone: patient.phoneNumber || "Not provided",
+                condition: patient.condition || "Pregnancy - Active",
+                riskLevel: (patient.riskLevel || "Medium") as "Low" | "Medium" | "High",
+                lastVisit: patient.lastVisitDate || new Date().toISOString().split("T")[0],
+              };
+            });
+            
+            setPatients(transformedPatients);
           } else {
-            console.log("No patient data found, using fallback")
-            setPatients(getFallbackPatients())
+            console.log("No patient data found in the expected format, using fallback");
+            setPatients(getFallbackPatients());
           }
         }
       } catch (error) {

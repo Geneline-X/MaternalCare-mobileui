@@ -389,6 +389,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#ffffff",
+    marginTop: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -455,6 +456,7 @@ const styles = StyleSheet.create({
   },
   section: {
     padding: 16,
+    marginBottom: 90,
   },
   sectionTitle: {
     fontSize: 18,
