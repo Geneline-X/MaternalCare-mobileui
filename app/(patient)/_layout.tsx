@@ -77,6 +77,12 @@ export default function PatientLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="create-appointment"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   )
 }

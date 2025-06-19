@@ -26,6 +26,8 @@ export default function SignUp() {
     email: "",
     password: "",
     role: "patient" as "patient" | "doctor",
+    profession: "",
+    experienceYears: "",
   })
   const [pendingVerification, setPendingVerification] = useState(false)
   const [code, setCode] = useState("")
@@ -40,8 +42,31 @@ export default function SignUp() {
   const handleSignUp = async () => {
     if (!isLoaded) return
 
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
-      Alert.alert("Error", "Please fill in all required fields")
+    // Define required fields with proper typing
+    type RequiredFields = {
+      [key: string]: string;
+    };
+    
+    const requiredFields: RequiredFields = {
+      'First Name': formData.firstName,
+      'Last Name': formData.lastName,
+      'Email': formData.email,
+      'Password': formData.password,
+    }
+
+    // Additional required fields for doctors
+    if (formData.role === 'doctor') {
+      requiredFields['Profession'] = formData.profession
+      requiredFields['Years of Experience'] = formData.experienceYears
+    }
+
+    // Check for empty required fields
+    const emptyFields = Object.entries(requiredFields)
+      .filter(([_, value]) => !value)
+      .map(([field]) => field)
+
+    if (emptyFields.length > 0) {
+      Alert.alert("Error", `Please fill in all required fields: ${emptyFields.join(', ')}`)
       return
     }
 
@@ -64,6 +89,10 @@ export default function SignUp() {
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
           role: formData.role,
+          ...(formData.role === 'doctor' && {
+            profession: formData.profession.trim(),
+            experienceYears: formData.experienceYears.trim(),
+          }),
         },
       })
 
@@ -196,22 +225,59 @@ export default function SignUp() {
             </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Last Name *</Text>
-            <View style={styles.inputContainer}>
-              <User size={20} color={Colors.neutral[400]} />
-              <TextInput
-                style={styles.input}
-                value={formData.lastName}
-                onChangeText={(value) => updateFormData("lastName", value)}
-                placeholder="Enter your last name"
-                autoComplete="family-name"
-              />
-            </View>
-          </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Last Name *</Text>
+                <View style={styles.inputContainer}>
+                  <User size={20} color={Colors.neutral[400]} />
+                  <TextInput
+                    style={styles.input}
+                    value={formData.lastName}
+                    onChangeText={(value) => updateFormData("lastName", value)}
+                    placeholder="Enter your last name"
+                    autoComplete="family-name"
+                  />
+                </View>
+              </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email *</Text>
+              {/* Doctor-specific fields */}
+              {formData.role === 'doctor' && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Profession *</Text>
+                    <View style={styles.inputContainer}>
+                      <Stethoscope size={20} color={Colors.neutral[400]} />
+                      <TextInput
+                        style={styles.input}
+                        value={formData.profession}
+                        onChangeText={(value) => updateFormData("profession", value)}
+                        placeholder="e.g., Obstetrician, Gynecologist"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Years of Experience *</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={[styles.input, { paddingLeft: 16 }]}
+                        value={formData.experienceYears}
+                        onChangeText={(value) => {
+                          // Allow only numbers
+                          if (value === '' || /^\d+$/.test(value)) {
+                            updateFormData("experienceYears", value)
+                          }
+                        }}
+                        placeholder="Number of years"
+                        keyboardType="number-pad"
+                        maxLength={2}
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email Address *</Text>
             <View style={styles.inputContainer}>
               <Mail size={20} color={Colors.neutral[400]} />
               <TextInput
@@ -333,7 +399,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   inputGroup: {
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.lg,
+    opacity: 1,
   },
   label: {
     fontSize: 14,
