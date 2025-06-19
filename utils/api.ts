@@ -2,17 +2,34 @@
 
 import { useAuth } from "@clerk/clerk-expo"
 import { useCallback } from "react"
-import type { ApiResponse, ApiError } from "../types/api"
-import { CacheManager } from "./cacheManager"
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://maternalcare-backend.onrender.com"
 
-// Default cache TTLs (in milliseconds)
-const DEFAULT_CACHE_TTLS = {
-  GET: 5 * 60 * 1000, // 5 minutes for GET requests
-  POST: 0, // No caching for POST requests
-  PUT: 0, // No caching for PUT requests
-  DELETE: 0, // No caching for DELETE requests
+// Request queue to prevent simultaneous identical requests
+const requestQueue = new Map<string, Promise<any>>()
+
+// Rate limiting: track request timestamps
+const requestTimestamps: number[] = []
+const MAX_REQUESTS_PER_MINUTE = 30
+const RATE_LIMIT_WINDOW = 60000 // 1 minute
+
+function isRateLimited(): boolean {
+  const now = Date.now()
+  // Remove timestamps older than 1 minute
+  while (requestTimestamps.length > 0 && now - requestTimestamps[0] > RATE_LIMIT_WINDOW) {
+    requestTimestamps.shift()
+  }
+
+  return requestTimestamps.length >= MAX_REQUESTS_PER_MINUTE
+}
+
+function addRequestTimestamp(): void {
+  requestTimestamps.push(Date.now())
+}
+
+// Delay function for spacing requests
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export class ApiClient {
@@ -24,30 +41,42 @@ export class ApiClient {
     this.getToken = getToken
   }
 
-  async request<T = any>(
-    endpoint: string,
-    options: RequestInit = {},
-    cacheOptions?: { ttl?: number; forceRefresh?: boolean },
-  ): Promise<ApiResponse<T>> {
-    const method = options.method || "GET"
-    const shouldCache = method === "GET" && !cacheOptions?.forceRefresh
-    const cacheTTL = cacheOptions?.ttl || DEFAULT_CACHE_TTLS[method as keyof typeof DEFAULT_CACHE_TTLS] || 0
-
-    // Generate cache key for GET requests
-    let cacheKey = ""
-    if (shouldCache && cacheTTL > 0) {
-      const url = new URL(`${this.baseURL}${endpoint}`)
-      cacheKey = await CacheManager.generateKey(url.pathname, Object.fromEntries(url.searchParams))
-
-      // Try to get from cache first
-      const cachedData = await CacheManager.get<ApiResponse<T>>(cacheKey)
-      if (cachedData) {
-        console.log(`Cache hit for ${endpoint}`)
-        return cachedData
-      }
+  async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    // Check rate limiting
+    if (isRateLimited()) {
+      console.warn("Rate limit reached, waiting...")
+      await delay(2000) // Wait 2 seconds
     }
 
+    // Create request key for deduplication
+    const requestKey = `${options.method || "GET"}-${endpoint}-${JSON.stringify(options.body || {})}`
+
+    // Check if identical request is already in progress
+    if (requestQueue.has(requestKey)) {
+      console.log(`Deduplicating request: ${requestKey}`)
+      return requestQueue.get(requestKey)!
+    }
+
+    // Create the request promise
+    const requestPromise = this.executeRequest<T>(endpoint, options)
+
+    // Store in queue
+    requestQueue.set(requestKey, requestPromise)
+
     try {
+      const result = await requestPromise
+      return result
+    } finally {
+      // Remove from queue when done
+      requestQueue.delete(requestKey)
+    }
+  }
+
+  private async executeRequest<T>(endpoint: string, options: RequestInit): Promise<T> {
+    try {
+      // Add to rate limiting tracker
+      addRequestTimestamp()
+
       const token = await this.getToken()
 
       const config: RequestInit = {
@@ -60,56 +89,35 @@ export class ApiClient {
       }
 
       console.log(`Making API request to ${endpoint}`)
+
+      // Add small delay between requests to be respectful
+      await delay(100)
+
       const response = await fetch(`${this.baseURL}${endpoint}`, config)
 
       if (!response.ok) {
-        const errorData: ApiError = await response.json()
-        throw new Error(errorData.message || `HTTP ${response.status}`)
+        if (response.status === 429) {
+          throw new Error(`Rate limited. Please wait before making more requests.`)
+        }
+        if (response.status === 404) {
+          throw new Error(`Endpoint not found: ${endpoint}`)
+        }
+        if (response.status >= 500) {
+          throw new Error(`Server error (${response.status}). Please try again later.`)
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
 
       const data = await response.json()
-
-      // Handle wrapped responses from backend
-      let responseData = data
-      if (data && typeof data === "object" && "success" in data) {
-        if (!data.success) {
-          throw new Error(data.message || "API request failed")
-        }
-        responseData = data.data || data
-      }
-
-      // Cache successful GET responses
-      if (shouldCache && cacheTTL > 0 && cacheKey) {
-        await CacheManager.set(cacheKey, responseData, cacheTTL)
-        console.log(`Cached response for ${endpoint}`)
-      }
-
-      return {
-        success: true,
-        data: responseData,
-        timestamp: data.timestamp || new Date().toISOString(),
-      }
+      return data
     } catch (error) {
-      console.error(`API request failed for ${endpoint}:`, error)
-
-      // Return a more specific error response
-      const apiError: ApiError = {
-        success: false,
-        error: error instanceof Error ? error.name : "Unknown Error",
-        message: error instanceof Error ? error.message : "An unknown error occurred",
-        timestamp: new Date().toISOString(),
-      }
-
-      throw apiError
+      console.error("API request failed:", error)
+      throw error
     }
   }
 
-  async get<T = any>(
-    endpoint: string,
-    params?: Record<string, any>,
-    cacheOptions?: { ttl?: number; forceRefresh?: boolean },
-  ): Promise<ApiResponse<T>> {
-    let url = endpoint
+  async get<T = any>(endpoint: string, params?: Record<string, any>): Promise<T> {
+    const url = new URL(`${this.baseURL}${endpoint}`)
     if (params) {
       const searchParams = new URLSearchParams()
       Object.entries(params).forEach(([key, value]) => {
@@ -123,69 +131,27 @@ export class ApiClient {
       }
     }
 
-    return this.request<T>(url, { method: "GET" }, cacheOptions)
+    return this.request<T>(url.pathname + url.search, { method: "GET" })
   }
 
-  async post<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    // Clear related cache entries on POST
-    await this.invalidateRelatedCache(endpoint)
-
+  async post<T = any>(endpoint: string, data?: any): Promise<T> {
     return this.request<T>(endpoint, {
       method: "POST",
       body: data ? JSON.stringify(data) : undefined,
     })
   }
 
-  async put<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
-    // Clear related cache entries on PUT
-    await this.invalidateRelatedCache(endpoint)
-
+  async put<T = any>(endpoint: string, data?: any): Promise<T> {
     return this.request<T>(endpoint, {
       method: "PUT",
       body: data ? JSON.stringify(data) : undefined,
     })
   }
 
-  async delete<T = any>(endpoint: string): Promise<ApiResponse<T>> {
-    // Clear related cache entries on DELETE
-    await this.invalidateRelatedCache(endpoint)
-
+  async delete<T = any>(endpoint: string): Promise<T> {
     return this.request<T>(endpoint, {
       method: "DELETE",
     })
-  }
-
-  // Helper method to invalidate related cache entries
-  private async invalidateRelatedCache(endpoint: string): Promise<void> {
-    try {
-      // Extract the base resource from the endpoint
-      const resourceMatch = endpoint.match(/\/api\/fhir\/(\w+)/)
-      if (resourceMatch) {
-        const resource = resourceMatch[1]
-        // Clear cache entries that might be related to this resource
-        const patterns = [
-          `/api/fhir/${resource}`,
-          `/api/fhir/${resource.toLowerCase()}`,
-          "/api/fhir/dashboard", // Dashboard data might be affected
-        ]
-
-        for (const pattern of patterns) {
-          await CacheManager.clear(await CacheManager.generateKey(pattern))
-        }
-      }
-    } catch (error) {
-      console.error("Error invalidating cache:", error)
-    }
-  }
-
-  // Method to clear all cache
-  async clearCache(): Promise<void> {
-    await CacheManager.clearAll()
-  }
-
-  // Method to clear expired cache
-  async clearExpiredCache(): Promise<void> {
-    await CacheManager.clearExpired()
   }
 }
 
@@ -195,12 +161,4 @@ export const useApiClient = () => {
   return useCallback(() => {
     return new ApiClient(API_BASE_URL, getToken)
   }, [getToken])()
-}
-
-// Legacy export for backward compatibility
-export const apiClient = {
-  getPatients: async () => {
-    // Mock implementation for backward compatibility
-    return []
-  },
 }

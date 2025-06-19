@@ -1,7 +1,5 @@
 "use client"
-
-import * as React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { LineChart, BarChart, PieChart } from "react-native-chart-kit"
@@ -10,7 +8,6 @@ import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
 import type { ReportInsight, ExportOptions } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { apiClient } from "@/utils/api"
 
 const screenWidth = Dimensions.get("window").width
 
@@ -120,13 +117,14 @@ export default function ReportsAnalytics() {
     setLoading(true)
     setError(null)
     try {
-      const metricsResponse = await fetch(`/api/fhir/analytics/metrics?timeframe=${selectedTimeframe}`)
+      const [metricsResponse, chartsResponse, insightsResponse] = await Promise.all([
+        fetch(`/api/fhir/analytics/metrics?timeframe=${selectedTimeframe}`),
+        fetch(`/api/fhir/analytics/charts?timeframe=${selectedTimeframe}`),
+        fetch(`/api/fhir/analytics/insights?timeframe=${selectedTimeframe}`),
+      ])
+
       const metricsData = await metricsResponse.json()
-
-      const chartsResponse = await fetch(`/api/fhir/analytics/charts?timeframe=${selectedTimeframe}`)
       const chartsData = await chartsResponse.json()
-
-      const insightsResponse = await fetch(`/api/fhir/analytics/insights?timeframe=${selectedTimeframe}`)
       const insightsData = await insightsResponse.json()
 
       setAnalyticsData({
@@ -139,12 +137,13 @@ export default function ReportsAnalytics() {
     } catch (e: any) {
       setError(e.message || "Failed to load data")
       console.error("Error fetching data:", e)
+      // toast.show("Failed to load analytics data", { type: "danger" })
     } finally {
       setLoading(false)
     }
   }
 
-  const onRefresh = React.useCallback(() => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true)
     fetchData().finally(() => setRefreshing(false))
   }, [selectedTimeframe])
