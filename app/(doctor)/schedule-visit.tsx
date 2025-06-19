@@ -86,27 +86,18 @@ export default function ScheduleVisit() {
 
   const fetchPatients = async () => {
     try {
-      // Backend likely uses /api/fhir/Patient
-      const response = await apiClient.get<PaginatedResponse<PatientForSelection>>(
-        "/api/fhir/Patient", // Update endpoint
-        {
-          _page: 1,
-          _count: 50,
-          active: true,
-        },
-        { ttl: 15 * 60 * 1000 },
-      )
+      const response = await apiClient.get<PaginatedResponse<PatientForSelection>>("/api/fhir/Patient", {
+        _page: 1,
+        _count: 50,
+        active: true,
+      })
 
       if (response.success && response.data) {
-        setPatients(response.data.data)
+        setPatients(response.data)
       }
     } catch (error) {
       console.error("Error fetching patients:", error)
-      if ((error as Error).message?.includes("429")) {
-        toast.show("Rate limit reached. Using cached patient data.", { type: "warning" })
-      } else {
-        toast.show("Failed to load patients", { type: "danger" })
-      }
+      toast.show("Failed to load patients", { type: "danger" })
     }
   }
 
@@ -114,26 +105,20 @@ export default function ScheduleVisit() {
     if (!date) return
 
     try {
-      // Backend endpoint is /api/schedule/availability, not /api/fhir/schedule/availability
       const response = await apiClient.get<{ success: boolean; data: ScheduleAvailability; timestamp: string }>(
         "/api/fhir/schedule/availability",
         {
           date: date,
           duration: Number.parseInt(formData.duration.split(" ")[0]),
         },
-        { ttl: 5 * 60 * 1000 },
       )
 
       if (response.success && response.data) {
-        setTimeSlots(response.data.data.timeSlots) // Access nested data property
+        setTimeSlots(response.data.data.timeSlots)
       }
     } catch (error) {
       console.error("Error fetching time slots:", error)
-      if ((error as Error).message?.includes("429")) {
-        toast.show("Rate limit reached. Showing cached time slots.", { type: "warning" })
-      } else {
-        toast.show("Failed to load available times", { type: "danger" })
-      }
+      toast.show("Failed to load available times", { type: "danger" })
     }
   }
 
@@ -163,13 +148,9 @@ export default function ScheduleVisit() {
 
     setLoading(true)
     try {
-      const startDateTime = new Date(`${formData.date}T${formData.time}:00`)
-      const endDateTime = new Date(startDateTime.getTime() + Number.parseInt(formData.duration.split(" ")[0]) * 60000)
-
-      // Backend expects a simpler appointment structure
       const appointmentData = {
         patientId: formData.patientId,
-        doctorId: "req.user.id", // This will be set by backend
+        doctorId: "req.user.id",
         date: formData.date,
         time: formData.time,
         duration: Number.parseInt(formData.duration.split(" ")[0]),
@@ -179,7 +160,7 @@ export default function ScheduleVisit() {
         status: "scheduled",
       }
 
-      const response = await apiClient.post<any>("/api/appointments", appointmentData) // Update endpoint
+      const response = await apiClient.post<any>("/api/appointments", appointmentData)
 
       if (response.success) {
         Alert.alert("Success", "Appointment has been scheduled successfully!", [

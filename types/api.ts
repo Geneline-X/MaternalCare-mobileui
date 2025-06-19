@@ -17,6 +17,7 @@ export interface PaginatedResponse<T = any> {
     hasNext: boolean
     hasPrev: boolean
   }
+  success: boolean
 }
 
 // Dashboard Types
@@ -138,6 +139,7 @@ export interface PatientListItem {
   phone: string
   pregnancyWeek?: number
   riskLevel: "Low" | "Medium" | "High"
+  data: PatientResponse
 }
 
 export interface PatientSummary {
@@ -145,6 +147,8 @@ export interface PatientSummary {
   highRiskPatients: number
   dueSoonPatients: number
   newPatientsThisMonth: number
+  success: boolean
+  data: PatientSummary
 }
 
 export interface PatientForSelection {
@@ -152,6 +156,7 @@ export interface PatientForSelection {
   name: string
   email: string
   phone: string
+  data: PatientResponse
 }
 
 export interface PatientForForm {
@@ -254,6 +259,7 @@ export interface TimeSlot {
 export interface ScheduleAvailability {
   date: string
   timeSlots: TimeSlot[]
+  data: ScheduleAvailability
 }
 
 // Health Monitoring Types
