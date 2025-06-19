@@ -84,6 +84,12 @@ export class ApiClient {
         headers: {
           "Content-Type": "application/json",
           ...(token && { Authorization: `Bearer ${token}` }),
+          // Add additional headers for user routes
+          ...(endpoint.includes("/users/") &&
+            token && {
+              "x-user-id": token, // Some endpoints might expect user ID in header
+              "x-auth-token": token,
+            }),
           ...options.headers,
         },
       }
@@ -101,6 +107,12 @@ export class ApiClient {
         }
         if (response.status === 404) {
           throw new Error(`Endpoint not found: ${endpoint}`)
+        }
+        if (response.status === 401) {
+          throw new Error(`Unauthorized. Please check your authentication.`)
+        }
+        if (response.status === 403) {
+          throw new Error(`Forbidden. You don't have permission to access this resource.`)
         }
         if (response.status >= 500) {
           throw new Error(`Server error (${response.status}). Please try again later.`)

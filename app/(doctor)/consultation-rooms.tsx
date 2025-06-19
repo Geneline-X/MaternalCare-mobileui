@@ -26,6 +26,7 @@ const ConsultationRoomsScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
+  const [connectionRetries, setConnectionRetries] = useState(0)
 
   const { activeRooms, isConnected, isLoading, error, joinRoom, clearError } = useChat({
     userId: user?.id || "doctor-demo",
@@ -34,13 +35,24 @@ const ConsultationRoomsScreen: React.FC = () => {
     callbacks: {
       onError: (err: Error) => {
         console.error("Chat error:", err)
-        // Don't show alert for websocket errors in mock mode
-        if (!err.message.includes("websocket")) {
-          Alert.alert("Error", err.message)
+
+        // Handle timeout errors gracefully
+        if (err.message.includes("timeout")) {
+          setConnectionRetries((prev) => prev + 1)
+          if (connectionRetries < 3) {
+            console.log(`Connection timeout, retrying... (${connectionRetries + 1}/3)`)
+            return // Don't show alert for timeout errors during retries
+          }
+        }
+
+        // Only show alert for non-timeout errors or after max retries
+        if (!err.message.includes("timeout") || connectionRetries >= 3) {
+          Alert.alert("Connection Error", "Unable to connect to chat server. Please check your internet connection.")
         }
       },
       onConnect: () => {
         console.log("Doctor connected to medical chat")
+        setConnectionRetries(0) // Reset retry counter on successful connection
       },
       onNotification: (notification: ChatNotification) => {
         if (notification.type === "patientRoomCreated") {
@@ -56,7 +68,7 @@ const ConsultationRoomsScreen: React.FC = () => {
     setTimeout(() => setRefreshing(false), 1500)
   }, [])
 
-  const handleJoinRoom = async (room: ConsultationRoom) => {
+  const handleJoinChat = async (room: ConsultationRoom) => {
     if (selectedRoom === room.id) return
 
     try {
@@ -78,6 +90,14 @@ const ConsultationRoomsScreen: React.FC = () => {
     } finally {
       setSelectedRoom(null)
     }
+  }
+
+  const handleViewPatientInfo = (room: ConsultationRoom) => {
+    console.log(`Navigating to patient details for: ${room.patientName} (ID: ${room.patientId})`)
+    router.push({
+      pathname: "/(doctor)/patient-details",
+      params: { patientId: room.patientId },
+    })
   }
 
   const filteredRooms = activeRooms.filter(
@@ -109,80 +129,93 @@ const ConsultationRoomsScreen: React.FC = () => {
   }
 
   const renderRoomItem = ({ item: room }: { item: ConsultationRoom }) => (
-    <TouchableOpacity
-      style={[styles.roomCard, selectedRoom === room.id && styles.roomCardSelected]}
-      onPress={() => handleJoinRoom(room)}
-      disabled={selectedRoom === room.id}
-    >
-      <View style={styles.roomHeader}>
-        <View style={styles.patientInfo}>
-          <View style={styles.patientAvatar}>
-            <Ionicons name="person" size={24} color="white" />
+    <View style={[styles.roomCard, selectedRoom === room.id && styles.roomCardSelected]}>
+      {/* Patient Info Section - Clickable */}
+      <TouchableOpacity
+        style={styles.patientInfoSection}
+        onPress={() => handleViewPatientInfo(room)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.roomHeader}>
+          <View style={styles.patientInfo}>
+            <View style={styles.patientAvatar}>
+              <Ionicons name="person" size={24} color="white" />
+            </View>
+            <View style={styles.patientDetails}>
+              <Text style={styles.patientName}>{room.patientName || `Patient ${room.patientId.slice(-4)}`}</Text>
+              <Text style={styles.patientId}>ID: {room.patientId}</Text>
+            </View>
           </View>
-          <View style={styles.patientDetails}>
-            <Text style={styles.patientName}>{room.patientName || `Patient ${room.patientId.slice(-4)}`}</Text>
-            <Text style={styles.patientId}>ID: {room.patientId}</Text>
+
+          <View style={styles.roomStatus}>
+            <View style={[styles.statusIndicator, { backgroundColor: getRoomStatusColor(room) }]} />
+            <Text style={[styles.statusText, { color: getRoomStatusColor(room) }]}>{getRoomStatusText(room)}</Text>
           </View>
         </View>
 
-        <View style={styles.roomStatus}>
-          <View style={[styles.statusIndicator, { backgroundColor: getRoomStatusColor(room) }]} />
-          <Text style={[styles.statusText, { color: getRoomStatusColor(room) }]}>{getRoomStatusText(room)}</Text>
-        </View>
-      </View>
-
-      <View style={styles.roomContent}>
-        {room.lastMessage && (
-          <View style={styles.lastMessage}>
-            <Text style={styles.lastMessageText} numberOfLines={2}>
-              {room.lastMessage.senderType === "ai" && "🤖 "}
-              {room.lastMessage.senderType === "doctor" && "👨‍⚕️ "}
-              {room.lastMessage.content}
-            </Text>
-            <Text style={styles.lastMessageTime}>{formatTime(room.lastMessage.timestamp)}</Text>
-          </View>
-        )}
-
-        <View style={styles.roomMeta}>
-          <View style={styles.roomMetaItem}>
-            <Ionicons name="time-outline" size={16} color="#666" />
-            <Text style={styles.roomMetaText}>Started {formatTime(room.createdAt)}</Text>
-          </View>
-
-          {room.unreadCount && room.unreadCount > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadCount}>{room.unreadCount}</Text>
+        <View style={styles.roomContent}>
+          {room.lastMessage && (
+            <View style={styles.lastMessage}>
+              <Text style={styles.lastMessageText} numberOfLines={2}>
+                {room.lastMessage.senderType === "ai" && "🤖 "}
+                {room.lastMessage.senderType === "doctor" && "👨‍⚕️ "}
+                {room.lastMessage.content}
+              </Text>
+              <Text style={styles.lastMessageTime}>{formatTime(room.lastMessage.timestamp)}</Text>
             </View>
           )}
-        </View>
-      </View>
 
+          <View style={styles.roomMeta}>
+            <View style={styles.roomMetaItem}>
+              <Ionicons name="time-outline" size={16} color="#666" />
+              <Text style={styles.roomMetaText}>Started {formatTime(room.createdAt)}</Text>
+            </View>
+
+            {room.unreadCount && room.unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadCount}>{room.unreadCount}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Action Buttons Section */}
       <View style={styles.roomActions}>
-        <TouchableOpacity style={styles.actionButton}>
-          <Ionicons name="chatbubble-outline" size={16} color={Colors.primary[600]} />
-          <Text style={styles.actionText}>Join Chat</Text>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.joinChatButton]}
+          onPress={() => handleJoinChat(room)}
+          disabled={selectedRoom === room.id}
+        >
+          {selectedRoom === room.id ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <Ionicons name="chatbubble-outline" size={16} color="white" />
+          )}
+          <Text style={styles.joinChatText}>{selectedRoom === room.id ? "Joining..." : "Join Chat"}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionButton}>
-          <Ionicons name="medical-outline" size={16} color="#666" />
-          <Text style={styles.actionText}>Patient Info</Text>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.patientInfoButton]}
+          onPress={() => handleViewPatientInfo(room)}
+        >
+          <Ionicons name="medical-outline" size={16} color={Colors.primary[600]} />
+          <Text style={styles.patientInfoText}>Patient Info</Text>
         </TouchableOpacity>
       </View>
-
-      {selectedRoom === room.id && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color={Colors.primary[600]} />
-          <Text style={styles.loadingText}>Joining...</Text>
-        </View>
-      )}
-    </TouchableOpacity>
+    </View>
   )
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary[600]} />
-        <Text style={styles.loadingText}>Loading consultation rooms...</Text>
+        <Text style={styles.loadingText}>
+          {connectionRetries > 0
+            ? `Connecting to chat server... (${connectionRetries}/3)`
+            : "Loading consultation rooms..."}
+        </Text>
+        {connectionRetries > 0 && <Text style={styles.retryText}>Server may be starting up, please wait...</Text>}
       </View>
     )
   }
@@ -199,7 +232,7 @@ const ConsultationRoomsScreen: React.FC = () => {
             </Text>
             {!isConnected && (
               <View style={styles.offlineIndicator}>
-                <Text style={styles.offlineText}>• Offline Mode</Text>
+                <Text style={styles.offlineText}>{connectionRetries > 0 ? "• Connecting..." : "• Offline Mode"}</Text>
               </View>
             )}
           </View>
@@ -226,17 +259,17 @@ const ConsultationRoomsScreen: React.FC = () => {
       </View>
 
       {/* Connection Status */}
-      {!isConnected && (
+      {!isConnected && connectionRetries > 0 && (
         <View style={styles.connectionBanner}>
-          <Ionicons name="wifi-outline" size={16} color="#EF4444" />
-          <Text style={styles.connectionText}>Reconnecting to server...</Text>
+          <Ionicons name="wifi-outline" size={16} color="#F59E0B" />
+          <Text style={styles.connectionText}>Connecting to server... ({connectionRetries}/3)</Text>
         </View>
       )}
 
       {/* Error Banner */}
-      {error && (
+      {error && connectionRetries >= 3 && (
         <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>Connection failed. Using offline mode.</Text>
           <TouchableOpacity onPress={clearError}>
             <Ionicons name="close" size={16} color="white" />
           </TouchableOpacity>
@@ -258,11 +291,13 @@ const ConsultationRoomsScreen: React.FC = () => {
           <View style={styles.emptyIcon}>
             <Ionicons name="chatbubbles-outline" size={64} color="#CCC" />
           </View>
-          <Text style={styles.emptyTitle}>No Active Consultations</Text>
+          <Text style={styles.emptyTitle}>{!isConnected ? "Connection Issues" : "No Active Consultations"}</Text>
           <Text style={styles.emptyText}>
-            {searchQuery
-              ? "No patients match your search criteria"
-              : "Patients will appear here when they start a consultation"}
+            {!isConnected
+              ? "Unable to connect to chat server. Please check your internet connection."
+              : searchQuery
+                ? "No patients match your search criteria"
+                : "Patients will appear here when they start a consultation"}
           </Text>
           {searchQuery && (
             <TouchableOpacity style={styles.clearSearchButton} onPress={() => setSearchQuery("")}>
@@ -310,6 +345,14 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: "#666",
+    textAlign: "center",
+  },
+  retryText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#999",
+    textAlign: "center",
+    fontStyle: "italic",
   },
   header: {
     backgroundColor: "white",
@@ -350,8 +393,8 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   connectionBanner: {
-    backgroundColor: "#FEF2F2",
-    borderColor: "#EF4444",
+    backgroundColor: "#FEF3C7",
+    borderColor: "#F59E0B",
     borderWidth: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -364,7 +407,7 @@ const styles = StyleSheet.create({
   connectionText: {
     marginLeft: 8,
     fontSize: 12,
-    color: "#DC2626",
+    color: "#92400E",
   },
   errorBanner: {
     backgroundColor: "#EF4444",
@@ -388,18 +431,20 @@ const styles = StyleSheet.create({
   roomCard: {
     backgroundColor: "white",
     borderRadius: 16,
-    padding: 16,
     marginBottom: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 3,
-    position: "relative",
+    overflow: "hidden",
   },
   roomCardSelected: {
     borderColor: Colors.primary[600],
     borderWidth: 2,
+  },
+  patientInfoSection: {
+    padding: 16,
   },
   roomHeader: {
     flexDirection: "row",
@@ -493,34 +538,38 @@ const styles = StyleSheet.create({
   },
   roomActions: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 8,
   },
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderRadius: 8,
-    flex: 0.48,
+    flex: 1,
     justifyContent: "center",
   },
-  actionText: {
-    fontSize: 12,
-    color: "#666",
-    marginLeft: 4,
+  joinChatButton: {
+    backgroundColor: Colors.primary[600],
+  },
+  joinChatText: {
+    fontSize: 14,
+    color: "white",
+    marginLeft: 8,
+    fontWeight: "600",
+  },
+  patientInfoButton: {
+    backgroundColor: "#F8F9FA",
+    borderWidth: 1,
+    borderColor: Colors.primary[200],
+  },
+  patientInfoText: {
+    fontSize: 14,
+    color: Colors.primary[600],
+    marginLeft: 8,
     fontWeight: "500",
-  },
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 16,
   },
   emptyState: {
     flex: 1,

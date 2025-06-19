@@ -48,6 +48,18 @@ interface TodaySchedule {
   }>
 }
 
+interface DoctorProfile {
+  id: string
+  name: string
+  firstName: string
+  lastName: string
+  email: string
+  profession: string
+  experienceYears: number
+  specialties: string[]
+  bio: string
+}
+
 const Dashboard: React.FC = () => {
   const { user } = useUser()
   const apiClient = useApiClient()
@@ -62,6 +74,7 @@ const Dashboard: React.FC = () => {
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null)
   const [todaySchedule, setTodaySchedule] = useState<TodaySchedule | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [doctorProfile, setDoctorProfile] = useState<DoctorProfile | null>(null)
 
   // Cleanup on unmount
   useEffect(() => {
@@ -134,6 +147,88 @@ const Dashboard: React.FC = () => {
     ],
   })
 
+  // Get fallback profile from Clerk user data
+  const getFallbackProfile = (): DoctorProfile => ({
+    id: user?.id || "",
+    name: user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : "Dr. Unknown",
+    firstName: user?.firstName || "",
+    lastName: user?.lastName || "",
+    email: user?.emailAddresses?.[0]?.emailAddress || "",
+    profession: "Maternal Health Specialist",
+    experienceYears: 0,
+    specialties: ["Maternal Health"],
+    bio: "",
+  })
+
+  // Load doctor profile with multiple strategies
+  const loadDoctorProfile = async () => {
+    if (!user?.id) {
+      console.log("No user ID available")
+      setDoctorProfile(getFallbackProfile())
+      return
+    }
+
+    try {
+      console.log("Attempting to load doctor profile for user:", user.id)
+
+      // Strategy 1: Try to get all doctors and find current user
+      try {
+        const doctorsResponse = await requestManager.queueRequest("all-doctors", () =>
+          apiClient.get("/api/users/doctors"),
+        )
+
+        if (doctorsResponse && doctorsResponse.success && doctorsResponse.data) {
+          // Find the current user in the doctors list
+          const currentDoctor = doctorsResponse.data.find(
+            (doctor: any) => doctor.clerkId === user.id || doctor.email === user.emailAddresses?.[0]?.emailAddress,
+          )
+
+          if (currentDoctor) {
+            console.log("Found doctor profile in doctors list:", currentDoctor)
+            setDoctorProfile({
+              id: currentDoctor.id || currentDoctor._id,
+              name: currentDoctor.name || `${currentDoctor.firstName || ""} ${currentDoctor.lastName || ""}`.trim(),
+              firstName: currentDoctor.firstName || "",
+              lastName: currentDoctor.lastName || "",
+              email: currentDoctor.email || "",
+              profession: currentDoctor.profession || "Maternal Health Specialist",
+              experienceYears: currentDoctor.experienceYears || 0,
+              specialties: currentDoctor.specialties || ["Maternal Health"],
+              bio: currentDoctor.bio || "",
+            })
+            return
+          }
+        }
+      } catch (error) {
+        console.log("Failed to get doctors list:", error)
+      }
+
+      // Strategy 2: Try direct ID lookup (if we have a MongoDB ID)
+      if (user.publicMetadata?.mongoId) {
+        try {
+          const profileResponse = await requestManager.queueRequest("doctor-profile-direct", () =>
+            apiClient.get(`/api/users/doctors/${user.publicMetadata.mongoId}`),
+          )
+
+          if (profileResponse && profileResponse.success) {
+            console.log("Found doctor profile by MongoDB ID:", profileResponse.data)
+            setDoctorProfile(profileResponse.data)
+            return
+          }
+        } catch (error) {
+          console.log("Failed to get doctor by MongoDB ID:", error)
+        }
+      }
+
+      // Strategy 3: Fallback to Clerk user data
+      console.log("Using fallback profile from Clerk user data")
+      setDoctorProfile(getFallbackProfile())
+    } catch (error) {
+      console.error("Error loading doctor profile:", error)
+      setDoctorProfile(getFallbackProfile())
+    }
+  }
+
   // Load dashboard data with request management
   const loadDashboardData = async () => {
     if (loadingRef.current) {
@@ -144,6 +239,9 @@ const Dashboard: React.FC = () => {
     try {
       loadingRef.current = true
       setError(null)
+
+      // Load doctor profile first
+      await loadDoctorProfile()
 
       // Load metrics with request queue
       try {
@@ -212,6 +310,7 @@ const Dashboard: React.FC = () => {
         setMetrics(getFallbackMetrics())
         setAnalytics(getFallbackAnalytics())
         setTodaySchedule(getFallbackSchedule())
+        setDoctorProfile(getFallbackProfile())
       }
     } finally {
       if (mountedRef.current) {
@@ -284,10 +383,13 @@ const Dashboard: React.FC = () => {
               </View>
               <View style={styles.profileInfo}>
                 <Text style={styles.doctorName}>
-                  {user?.firstName && user?.lastName ? `Dr. ${user.firstName} ${user.lastName}` : "Dr. David Wilson"}
+                  Dr. {doctorProfile?.firstName || user?.firstName || "Unknown"}{" "}
+                  {doctorProfile?.lastName || user?.lastName || ""}
                 </Text>
-                <Text style={styles.profession}>Maternal Health Specialist</Text>
-                <Text style={styles.credentials}>MD, OBGYN • 12 years experience</Text>
+                <Text style={styles.profession}>{doctorProfile?.profession || "Maternal Health Specialist"}</Text>
+                <Text style={styles.credentials}>
+                  MD, OBGYN • {doctorProfile?.experienceYears || 0} years experience
+                </Text>
                 <View style={styles.statusContainer}>
                   <View style={styles.statusDot} />
                   <Text style={styles.statusText}>Available</Text>
@@ -312,6 +414,17 @@ const Dashboard: React.FC = () => {
         {error && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Debug Info - Remove in production */}
+        {__DEV__ && (
+          <View style={styles.debugContainer}>
+            <Text style={styles.debugText}>Debug Info:</Text>
+            <Text style={styles.debugText}>User ID: {user?.id}</Text>
+            <Text style={styles.debugText}>Email: {user?.emailAddresses?.[0]?.emailAddress}</Text>
+            <Text style={styles.debugText}>Profile Loaded: {doctorProfile ? "Yes" : "No"}</Text>
+            {doctorProfile && <Text style={styles.debugText}>Profile Name: {doctorProfile.name}</Text>}
           </View>
         )}
 
@@ -501,6 +614,20 @@ const styles = StyleSheet.create({
     color: "#C62828",
     fontSize: 14,
     fontFamily: "Inter-Medium",
+  },
+  debugContainer: {
+    backgroundColor: "#E3F2FD",
+    margin: 20,
+    padding: 16,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: "#2196F3",
+  },
+  debugText: {
+    color: "#1565C0",
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    marginBottom: 4,
   },
   header: {
     backgroundColor: "#2F80ED",

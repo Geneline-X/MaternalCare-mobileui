@@ -24,14 +24,14 @@ export default function DoctorLayout() {
           bottom: 0,
           left: 0,
           right: 0,
-          height: Platform.OS === "ios" ? 80 + insets.bottom : 75,
+          height: Platform.OS === "ios" ? 80 + insets.bottom : 70,
           paddingTop: 8,
-          paddingBottom: Platform.OS === "ios" ? insets.bottom + 8 : 14,
+          paddingBottom: Platform.OS === "ios" ? insets.bottom + 8 : 8,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: "500",
-          marginTop: 4,
+          marginTop: 2,
         },
         headerShown: false,
       }}
@@ -93,6 +93,7 @@ export default function DoctorLayout() {
       <Tabs.Screen name="settings/privacy-security" options={{ href: null }} />
       <Tabs.Screen name="settings/terms-privacy" options={{ href: null }} />
       <Tabs.Screen name="create" options={{ href: null }} />
+      <Tabs.Screen name="appointments" options={{ href: null }} />
     </Tabs>
   )
 }
