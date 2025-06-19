@@ -148,7 +148,7 @@ export default function CreateAppointment() {
     setLoadingDoctors(true);
     try {
       const token = await getToken();
-      const url = `${API_BASE_URL}/fhir/users/doctors`; // Updated URL with /fhir
+      const url = `${API_BASE_URL}/users/doctors`;
       console.log("Loading doctors from:", url);
       console.log("Using token:", token ? "Token exists" : "No token");
   
@@ -501,7 +501,7 @@ export default function CreateAppointment() {
               </View>
             ) : (
               <FlatList
-                data={doctors}
+                data={doctors.data}
                 renderItem={renderDoctorItem}
                 keyExtractor={(item) => item.id}
                 style={styles.modalList}

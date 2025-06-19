@@ -90,8 +90,17 @@ export class ApiClient {
         timestamp: data.timestamp || new Date().toISOString(),
       }
     } catch (error) {
-      console.error("API request failed:", error)
-      throw error
+      console.error(`API request failed for ${endpoint}:`, error)
+
+      // Return a more specific error response
+      const apiError: ApiError = {
+        success: false,
+        error: error instanceof Error ? error.name : "Unknown Error",
+        message: error instanceof Error ? error.message : "An unknown error occurred",
+        timestamp: new Date().toISOString(),
+      }
+
+      throw apiError
     }
   }
 
@@ -100,16 +109,21 @@ export class ApiClient {
     params?: Record<string, any>,
     cacheOptions?: { ttl?: number; forceRefresh?: boolean },
   ): Promise<ApiResponse<T>> {
-    const url = new URL(`${this.baseURL}${endpoint}`)
+    let url = endpoint
     if (params) {
+      const searchParams = new URLSearchParams()
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
-          url.searchParams.append(key, String(value))
+          searchParams.append(key, String(value))
         }
       })
+      const queryString = searchParams.toString()
+      if (queryString) {
+        url += `?${queryString}`
+      }
     }
 
-    return this.request<T>(url.pathname + url.search, { method: "GET" }, cacheOptions)
+    return this.request<T>(url, { method: "GET" }, cacheOptions)
   }
 
   async post<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
