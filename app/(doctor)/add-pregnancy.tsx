@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   View,
   Text,
@@ -13,39 +13,53 @@ import {
   Switch,
   Modal,
   FlatList,
-  KeyboardTypeOptions,
+  type KeyboardTypeOptions,
 } from "react-native"
 import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
-import { FormErrors } from "../../types/app"
-import { StyleProp, ViewStyle, TextStyle } from 'react-native';
-const mockPatients = [
-  { id: "1", name: "Sarah Johnson", email: "sarah.johnson@email.com" },
-  { id: "2", name: "Emily Davis", email: "emily.davis@email.com" },
-  { id: "3", name: "Maria Rodriguez", email: "maria.rodriguez@email.com" },
-  { id: "4", name: "Jennifer Wilson", email: "jennifer.wilson@email.com" },
-  { id: "5", name: "Lisa Anderson", email: "lisa.anderson@email.com" },
-]
+import { useApiClient } from "../../utils/api"
+import type {
+  PatientForSelection,
+  PregnancyCreateRequest,
+  PregnancyResponse,
+  ApiResponse,
+  PaginatedResponse,
+  PatientQueryParams,
+} from "../../types/api"
+
+interface FormErrors {
+  patientId?: string
+  lastMenstrualPeriod?: string
+  estimatedDueDate?: string
+  currentWeek?: string
+  weight?: string
+  height?: string
+}
 
 const riskLevels = [
   { id: "low", label: "Low Risk", color: Colors.success[500] },
   { id: "medium", label: "Medium Risk", color: Colors.warning[500] },
   { id: "high", label: "High Risk", color: Colors.error[500] },
-]
+] as const
 
 export default function AddPregnancy() {
   const router = useRouter()
+  const apiClient = useApiClient()
+  const [loading, setLoading] = useState(false)
+  const [loadingPatients, setLoadingPatients] = useState(false)
   const [showPatientModal, setShowPatientModal] = useState(false)
   const [showRiskModal, setShowRiskModal] = useState(false)
+  const [patients, setPatients] = useState<PatientForSelection[]>([])
+
   const [formData, setFormData] = useState({
     patientId: "",
     patientName: "",
     lastMenstrualPeriod: "",
     estimatedDueDate: "",
     currentWeek: "",
-    riskLevel: "low",
+    riskLevel: "low" as "low" | "medium" | "high",
     riskLevelLabel: "Low Risk",
     complications: "",
     previousPregnancies: "",
@@ -61,7 +75,44 @@ export default function AddPregnancy() {
 
   const [errors, setErrors] = useState<FormErrors>({})
 
-  const validateForm = () => {
+  // Load patients when modal opens
+  useEffect(() => {
+    if (showPatientModal && patients.length === 0) {
+      loadPatients()
+    }
+  }, [showPatientModal])
+
+  const loadPatients = async () => {
+    setLoadingPatients(true)
+    try {
+      const params: PatientQueryParams = {
+        _page: 1,
+        _count: 50,
+      }
+
+      // Cache patient list for 15 minutes since it doesn't change frequently
+      const response: ApiResponse<PaginatedResponse<PatientForSelection>> = await apiClient.get(
+        "/api/fhir/Patient",
+        params,
+        { ttl: 15 * 60 * 1000 }, // 15 minutes cache
+      )
+
+      if (response.success && response.data) {
+        setPatients(response.data.data)
+      }
+    } catch (error) {
+      console.error("Error loading patients:", error)
+      if ((error as Error).message?.includes("429")) {
+        Alert.alert("Rate Limit", "Too many requests. Using cached data if available.")
+      } else {
+        Alert.alert("Error", "Failed to load patients. Please try again.")
+      }
+    } finally {
+      setLoadingPatients(false)
+    }
+  }
+
+  const validateForm = (): boolean => {
     const newErrors: FormErrors = {}
 
     if (!formData.patientId) newErrors.patientId = "Please select a patient"
@@ -75,73 +126,116 @@ export default function AddPregnancy() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSave = () => {
-    if (validateForm()) {
-      Alert.alert("Success", "Pregnancy record has been created successfully!", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ])
-    } else {
+  const handleSave = async () => {
+    if (!validateForm()) {
       Alert.alert("Error", "Please fill in all required fields correctly.")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const pregnancyData: PregnancyCreateRequest = {
+        patientId: formData.patientId,
+        lastMenstrualPeriod: formData.lastMenstrualPeriod,
+        estimatedDueDate: formData.estimatedDueDate,
+        currentWeek: Number.parseInt(formData.currentWeek),
+        riskLevel: formData.riskLevel,
+        complications: formData.complications || undefined,
+        previousPregnancies: formData.previousPregnancies || undefined,
+        currentSymptoms: formData.currentSymptoms || undefined,
+        bloodPressure: formData.bloodPressure || undefined,
+        weight: Number.parseFloat(formData.weight),
+        height: Number.parseFloat(formData.height),
+        prenatalVitamins: formData.prenatalVitamins,
+        smokingStatus: formData.smokingStatus,
+        alcoholConsumption: formData.alcoholConsumption,
+        notes: formData.notes || undefined,
+      }
+
+      const response: ApiResponse<PregnancyResponse> = await apiClient.post("/api/fhir/pregnancy", pregnancyData)
+
+      if (response.success) {
+        Alert.alert("Success", "Pregnancy record has been created successfully!", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ])
+      } else {
+        throw new Error(response.message || "Failed to create pregnancy record")
+      }
+    } catch (error) {
+      console.error("Error creating pregnancy:", error)
+      Alert.alert("Error", "Failed to create pregnancy record. Please try again.")
+    } finally {
+      setLoading(false)
     }
   }
 
-  const updateFormData = (field: keyof FormErrors, value: string) => {
+  const updateFormData = (field: keyof typeof formData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    if (errors[field]) {
+    if (errors[field as keyof FormErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
   }
 
-  const selectPatient = (patient: { id: string; name: string }) => {
+  const selectPatient = (patient: PatientForSelection) => {
     updateFormData("patientId", patient.id)
     updateFormData("patientName", patient.name)
     setShowPatientModal(false)
   }
 
-  const selectRiskLevel = (risk: { id: string; label: string }) => {
+  const selectRiskLevel = (risk: (typeof riskLevels)[number]) => {
     updateFormData("riskLevel", risk.id)
     updateFormData("riskLevelLabel", risk.label)
     setShowRiskModal(false)
   }
 
-  const renderInput = (label: string, field: keyof typeof formData, placeholder: string, multiline = false, keyboardType = "default") => (
-    <View style={styles.inputGroup}>
-      <Text style={styles.inputLabel}>
-        {label}
-        {[
-          "patientId", "lastMenstrualPeriod", "estimatedDueDate", "currentWeek", "weight", "height"
-        ].includes(field) && <Text style={styles.required}> *</Text>}
-      </Text>
-      <TextInput
-        style={[styles.input, multiline && styles.textArea, errors[field] && styles.inputError]}
-        placeholder={placeholder}
-        value={String(formData[field]) || ''}
-        onChangeText={(value) => updateFormData(field, value)}
-        multiline={multiline}
-        numberOfLines={multiline ? 4 : 1}
-        keyboardType={keyboardType as KeyboardTypeOptions}
-      />
-      {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
-    </View>
-  )
+  const renderInput = (
+    label: string,
+    field: keyof typeof formData,
+    placeholder: string,
+    multiline = false,
+    keyboardType: KeyboardTypeOptions = "default",
+  ) => {
+    const isRequired = ["lastMenstrualPeriod", "estimatedDueDate", "currentWeek", "weight", "height"].includes(field)
 
-  const renderPatientItem = ({ item }: { item: { id: string; name: string; email: string } }) => (
+    return (
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+          {label}
+          {isRequired && <Text style={styles.required}> *</Text>}
+        </Text>
+        <TextInput
+          style={[styles.input, multiline && styles.textArea, errors[field as keyof FormErrors] && styles.inputError]}
+          placeholder={placeholder}
+          value={String(formData[field])}
+          onChangeText={(value) => updateFormData(field, value)}
+          multiline={multiline}
+          numberOfLines={multiline ? 4 : 1}
+          keyboardType={keyboardType}
+          editable={!loading}
+        />
+        {errors[field as keyof FormErrors] && <Text style={styles.errorText}>{errors[field as keyof FormErrors]}</Text>}
+      </View>
+    )
+  }
+
+  const renderPatientItem = ({ item }: { item: PatientForSelection }) => (
     <TouchableOpacity style={styles.modalItem} onPress={() => selectPatient(item)}>
       <View style={styles.patientInfo}>
         <Text style={styles.patientName}>{item.name}</Text>
         <Text style={styles.patientEmail}>{item.email}</Text>
+        <Text style={styles.patientPhone}>{item.phone}</Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color={Colors.neutral[400]} />
     </TouchableOpacity>
   )
 
-  const renderRiskItem = ({ item }: { item: { id: string; label: string; color: string } }) => (
+  const renderRiskItem = ({ item }: { item: (typeof riskLevels)[number] }) => (
     <TouchableOpacity style={styles.modalItem} onPress={() => selectRiskLevel(item)}>
       <View style={styles.riskInfo}>
-        <View style={[styles.riskDot, { backgroundColor: item.color } as ViewStyle]} />
+        <View style={[styles.riskDot, { backgroundColor: item.color }]} />
         <Text style={styles.riskLabel}>{item.label}</Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color={Colors.neutral[400]} />
@@ -151,7 +245,7 @@ export default function AddPregnancy() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} disabled={loading}>
           <Ionicons name="arrow-back" size={24} color={Colors.neutral[800]} />
         </TouchableOpacity>
         <Text style={styles.title}>Add Pregnancy</Text>
@@ -169,7 +263,8 @@ export default function AddPregnancy() {
             <TouchableOpacity
               style={[styles.selector, errors.patientId && styles.inputError]}
               onPress={() => setShowPatientModal(true)}
-            >   
+              disabled={loading}
+            >
               <Text style={[styles.selectorText, !formData.patientName && styles.placeholder]}>
                 {formData.patientName || "Choose a patient"}
               </Text>
@@ -182,13 +277,13 @@ export default function AddPregnancy() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Pregnancy Details</Text>
 
-          {renderInput("Last Menstrual Period", "lastMenstrualPeriod", "DD/MM/YYYY")}
-          {renderInput("Estimated Due Date", "estimatedDueDate", "DD/MM/YYYY")}
+          {renderInput("Last Menstrual Period", "lastMenstrualPeriod", "YYYY-MM-DD")}
+          {renderInput("Estimated Due Date", "estimatedDueDate", "YYYY-MM-DD")}
           {renderInput("Current Week", "currentWeek", "e.g., 12", false, "numeric")}
 
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Risk Level</Text>
-            <TouchableOpacity style={styles.selector} onPress={() => setShowRiskModal(true)}>
+            <TouchableOpacity style={styles.selector} onPress={() => setShowRiskModal(true)} disabled={loading}>
               <View style={styles.riskSelector}>
                 <View
                   style={[
@@ -231,9 +326,10 @@ export default function AddPregnancy() {
             </View>
             <Switch
               value={formData.prenatalVitamins}
-              onValueChange={(value) => updateFormData("prenatalVitamins", value.toString())}
+              onValueChange={(value) => updateFormData("prenatalVitamins", value)}
               trackColor={{ false: Colors.neutral[300], true: Colors.success[200] }}
               thumbColor={formData.prenatalVitamins ? Colors.success[500] : Colors.neutral[500]}
+              disabled={loading}
             />
           </View>
 
@@ -244,9 +340,10 @@ export default function AddPregnancy() {
             </View>
             <Switch
               value={formData.smokingStatus}
-              onValueChange={(value) => updateFormData("smokingStatus", value.toString())}
+              onValueChange={(value) => updateFormData("smokingStatus", value)}
               trackColor={{ false: Colors.neutral[300], true: Colors.error[200] }}
               thumbColor={formData.smokingStatus ? Colors.error[500] : Colors.neutral[500]}
+              disabled={loading}
             />
           </View>
 
@@ -257,9 +354,10 @@ export default function AddPregnancy() {
             </View>
             <Switch
               value={formData.alcoholConsumption}
-              onValueChange={(value) => updateFormData("alcoholConsumption", value.toString())}
+              onValueChange={(value) => updateFormData("alcoholConsumption", value)}
               trackColor={{ false: Colors.neutral[300], true: Colors.error[200] }}
               thumbColor={formData.alcoholConsumption ? Colors.error[500] : Colors.neutral[500]}
+              disabled={loading}
             />
           </View>
 
@@ -267,11 +365,15 @@ export default function AddPregnancy() {
         </View>
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()} disabled={loading}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <Text style={styles.saveButtonText}>Create Pregnancy Record</Text>
+          <TouchableOpacity
+            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+            onPress={handleSave}
+            disabled={loading}
+          >
+            <Text style={styles.saveButtonText}>{loading ? "Creating..." : "Create Pregnancy Record"}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -291,12 +393,18 @@ export default function AddPregnancy() {
                 <Ionicons name="close" size={24} color={Colors.neutral[600]} />
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={mockPatients}
-              renderItem={renderPatientItem}
-              keyExtractor={(item) => item.id}
-              style={styles.modalList}
-            />
+            {loadingPatients ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Loading patients...</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={patients}
+                renderItem={renderPatientItem}
+                keyExtractor={(item) => item.id}
+                style={styles.modalList}
+              />
+            )}
           </View>
         </View>
       </Modal>
@@ -432,9 +540,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-Regular",
     color: Colors.neutral[800],
   },
-  placeholder1: {
-    color: Colors.neutral[400],
-  },
   riskSelector: {
     flexDirection: "row",
     alignItems: "center",
@@ -492,6 +597,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     alignItems: "center",
   },
+  saveButtonDisabled: {
+    backgroundColor: Colors.neutral[400],
+  },
   saveButtonText: {
     fontSize: 16,
     fontFamily: "Inter-SemiBold",
@@ -546,6 +654,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter-Regular",
     color: Colors.neutral[600],
+    marginBottom: 2,
+  },
+  patientPhone: {
+    fontSize: 12,
+    fontFamily: "Inter-Regular",
+    color: Colors.neutral[500],
   },
   riskInfo: {
     flexDirection: "row",
@@ -556,5 +670,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: "Inter-Medium",
     color: Colors.neutral[800],
+  },
+  loadingContainer: {
+    padding: Spacing.xl,
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: "Inter-Regular",
+    color: Colors.neutral[600],
   },
 })

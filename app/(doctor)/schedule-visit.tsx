@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   View,
   Text,
@@ -17,14 +17,9 @@ import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
-import { FormErrors } from "@/types/app"
-
-interface Patient {
-  id: string
-  name: string
-  email: string
-  phone: string
-}
+import { useApiClient } from "../../utils/api"
+import { useToast } from "react-native-toast-notifications"
+import type { PatientForSelection, PaginatedResponse, ScheduleAvailability, TimeSlot } from "../../types/api"
 
 interface VisitType {
   id: string
@@ -33,20 +28,26 @@ interface VisitType {
   color: string
 }
 
-interface TimeSlot {
+interface FormData {
+  patientId: string
+  patientName: string
+  visitType: string
+  visitTypeLabel: string
+  date: string
   time: string
-  available: boolean
-  duration: number
-  appointmentId?: string
+  duration: string
+  location: string
+  notes: string
+  reminderEnabled: boolean
+  videoCall: boolean
 }
 
-const mockPatients: Patient[] = [
-  { id: "1", name: "Sarah Johnson", email: "sarah.johnson@email.com", phone: "+1 (555) 123-4567" },
-  { id: "2", name: "Emily Davis", email: "emily.davis@email.com", phone: "+1 (555) 234-5678" },
-  { id: "3", name: "Maria Rodriguez", email: "maria.rodriguez@email.com", phone: "+1 (555) 345-6789" },
-  { id: "4", name: "Jennifer Wilson", email: "jennifer.wilson@email.com", phone: "+1 (555) 456-7890" },
-  { id: "5", name: "Lisa Anderson", email: "lisa.anderson@email.com", phone: "+1 (555) 567-8901" },
-]
+interface FormErrors {
+  patientId?: string
+  date?: string
+  time?: string
+  location?: string
+}
 
 const visitTypes: VisitType[] = [
   { id: "routine", label: "Routine Checkup", duration: "30 min", color: Colors.primary[500] },
@@ -56,50 +57,16 @@ const visitTypes: VisitType[] = [
   { id: "consultation", label: "Initial Consultation", duration: "60 min", color: Colors.warning[500] },
 ]
 
-const timeSlots: TimeSlot[] = [
-  { time: "08:00", available: true, duration: 30 },
-  { time: "08:30", available: true, duration: 30 },
-  { time: "09:00", available: true, duration: 30 },
-  { time: "09:30", available: true, duration: 30 },
-  { time: "10:00", available: true, duration: 30 },
-  { time: "10:30", available: true, duration: 30 },
-  { time: "11:00", available: true, duration: 30 },
-  { time: "11:30", available: true, duration: 30 },
-  { time: "12:00", available: true, duration: 30 },
-  { time: "12:30", available: true, duration: 30 },
-  { time: "13:00", available: true, duration: 30 },
-  { time: "13:30", available: true, duration: 30 },
-  { time: "14:00", available: true, duration: 30 },
-  { time: "14:30", available: true, duration: 30 },
-  { time: "15:00", available: true, duration: 30 },
-  { time: "15:30", available: true, duration: 30 },
-  { time: "16:00", available: true, duration: 30 },
-  { time: "16:30", available: true, duration: 30 },
-  { time: "17:00", available: true, duration: 30 },
-  { time: "17:30", available: true, duration: 30 },
-  { time: "18:00", available: true, duration: 30 },
-]
-
 export default function ScheduleVisit() {
   const router = useRouter()
   const [showPatientModal, setShowPatientModal] = useState(false)
   const [showVisitTypeModal, setShowVisitTypeModal] = useState(false)
   const [showTimeModal, setShowTimeModal] = useState(false)
-  const [selectedDate, setSelectedDate] = useState("")
-
-  interface FormData {
-    patientId: string
-    patientName: string
-    visitType: string
-    visitTypeLabel: string
-    date: string
-    time: string
-    duration: string
-    location: string
-    notes: string
-    reminderEnabled: boolean
-    videoCall: boolean
-  }
+  const [patients, setPatients] = useState<PatientForSelection[]>([])
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([])
+  const [loading, setLoading] = useState(false)
+  const apiClient = useApiClient()
+  const toast = useToast()
 
   const [formData, setFormData] = useState<FormData>({
     patientId: "",
@@ -115,24 +82,69 @@ export default function ScheduleVisit() {
     videoCall: false,
   })
 
-  interface FormErrors {
-    patientId?: string
-    patientName?: string
-    visitType?: string
-    visitTypeLabel?: string
-    date?: string
-    time?: string
-    duration?: string
-    location?: string
-    notes?: string
-    reminderEnabled?: string
-    videoCall?: string
-  }
-
   const [errors, setErrors] = useState<FormErrors>({})
 
+  const fetchPatients = async () => {
+    try {
+      // Backend likely uses /api/fhir/Patient
+      const response = await apiClient.get<PaginatedResponse<PatientForSelection>>(
+        "/api/fhir/Patient", // Update endpoint
+        {
+          _page: 1,
+          _count: 50,
+          active: true,
+        },
+        { ttl: 15 * 60 * 1000 },
+      )
+
+      if (response.success && response.data) {
+        setPatients(response.data.data)
+      }
+    } catch (error) {
+      console.error("Error fetching patients:", error)
+      if ((error as Error).message?.includes("429")) {
+        toast.show("Rate limit reached. Using cached patient data.", { type: "warning" })
+      } else {
+        toast.show("Failed to load patients", { type: "danger" })
+      }
+    }
+  }
+
+  const fetchTimeSlots = async (date: string) => {
+    if (!date) return
+
+    try {
+      // Backend endpoint is /api/schedule/availability, not /api/fhir/schedule/availability
+      const response = await apiClient.get<{ success: boolean; data: ScheduleAvailability; timestamp: string }>(
+        "/api/fhir/schedule/availability",
+        {
+          date: date,
+          duration: Number.parseInt(formData.duration.split(" ")[0]),
+        },
+        { ttl: 5 * 60 * 1000 },
+      )
+
+      if (response.success && response.data) {
+        setTimeSlots(response.data.data.timeSlots) // Access nested data property
+      }
+    } catch (error) {
+      console.error("Error fetching time slots:", error)
+      if ((error as Error).message?.includes("429")) {
+        toast.show("Rate limit reached. Showing cached time slots.", { type: "warning" })
+      } else {
+        toast.show("Failed to load available times", { type: "danger" })
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (formData.date) {
+      fetchTimeSlots(formData.date)
+    }
+  }, [formData.date, formData.duration])
+
   const validateForm = () => {
-    const newErrors: Partial<Record<keyof FormData, string>> = {}
+    const newErrors: FormErrors = {}
 
     if (!formData.patientId) newErrors.patientId = "Please select a patient"
     if (!formData.date.trim()) newErrors.date = "Please select a date"
@@ -143,27 +155,58 @@ export default function ScheduleVisit() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSchedule = () => {
-    if (validateForm()) {
-      Alert.alert("Success", "Appointment has been scheduled successfully!", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ])
-    } else {
+  const handleSchedule = async () => {
+    if (!validateForm()) {
       Alert.alert("Error", "Please fill in all required fields.")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const startDateTime = new Date(`${formData.date}T${formData.time}:00`)
+      const endDateTime = new Date(startDateTime.getTime() + Number.parseInt(formData.duration.split(" ")[0]) * 60000)
+
+      // Backend expects a simpler appointment structure
+      const appointmentData = {
+        patientId: formData.patientId,
+        doctorId: "req.user.id", // This will be set by backend
+        date: formData.date,
+        time: formData.time,
+        duration: Number.parseInt(formData.duration.split(" ")[0]),
+        type: formData.visitType,
+        location: formData.location,
+        notes: formData.notes,
+        status: "scheduled",
+      }
+
+      const response = await apiClient.post<any>("/api/appointments", appointmentData) // Update endpoint
+
+      if (response.success) {
+        Alert.alert("Success", "Appointment has been scheduled successfully!", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ])
+      } else {
+        Alert.alert("Error", "Failed to schedule appointment")
+      }
+    } catch (error) {
+      console.error("Error scheduling appointment:", error)
+      Alert.alert("Error", "Failed to schedule appointment")
+    } finally {
+      setLoading(false)
     }
   }
 
   const updateFormData = (field: keyof FormData, value: FormData[keyof FormData]) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: null }))
+    if (errors[field as keyof FormErrors]) {
+      setErrors((prev) => ({ ...prev, [field]: undefined }))
     }
   }
 
-  const selectPatient = (patient: Patient) => {
+  const selectPatient = (patient: PatientForSelection) => {
     updateFormData("patientId", patient.id)
     updateFormData("patientName", patient.name)
     setShowPatientModal(false)
@@ -181,6 +224,19 @@ export default function ScheduleVisit() {
     setShowTimeModal(false)
   }
 
+  const openPatientModal = () => {
+    fetchPatients()
+    setShowPatientModal(true)
+  }
+
+  const openTimeModal = () => {
+    if (!formData.date) {
+      toast.show("Please select a date first", { type: "warning" })
+      return
+    }
+    setShowTimeModal(true)
+  }
+
   const renderInput = (label: string, field: keyof FormErrors, placeholder: string, multiline = false) => (
     <View style={styles.inputGroup}>
       <Text style={styles.inputLabel}>
@@ -189,9 +245,9 @@ export default function ScheduleVisit() {
       </Text>
       <TextInput
         style={[styles.input, multiline && styles.textArea, errors[field] && styles.inputError]}
-        placeholder={placeholder}   
-        value={String(formData[field as keyof FormErrors])}
-        onChangeText={(value) => updateFormData(field, value)}
+        placeholder={placeholder}
+        value={String(formData[field as keyof FormData])}
+        onChangeText={(value) => updateFormData(field as keyof FormData, value)}
         multiline={multiline}
         numberOfLines={multiline ? 4 : 1}
       />
@@ -199,7 +255,7 @@ export default function ScheduleVisit() {
     </View>
   )
 
-  const renderPatientItem = ({ item }: { item: Patient }) => (
+  const renderPatientItem = ({ item }: { item: PatientForSelection }) => (
     <TouchableOpacity style={styles.modalItem} onPress={() => selectPatient(item)}>
       <View style={styles.patientInfo}>
         <Text style={styles.patientName}>{item.name}</Text>
@@ -221,8 +277,12 @@ export default function ScheduleVisit() {
   )
 
   const renderTimeSlotItem = ({ item }: { item: TimeSlot }) => (
-    <TouchableOpacity style={styles.timeSlot} onPress={() => selectTime(item.time)}>
-      <Text style={styles.timeSlotText}>{item.time}</Text>
+    <TouchableOpacity
+      style={[styles.timeSlot, !item.available && styles.timeSlotDisabled]}
+      onPress={() => item.available && selectTime(item.time)}
+      disabled={!item.available}
+    >
+      <Text style={[styles.timeSlotText, !item.available && styles.timeSlotTextDisabled]}>{item.time}</Text>
     </TouchableOpacity>
   )
 
@@ -246,7 +306,7 @@ export default function ScheduleVisit() {
             </Text>
             <TouchableOpacity
               style={[styles.selector, errors.patientId && styles.inputError]}
-              onPress={() => setShowPatientModal(true)}
+              onPress={openPatientModal}
             >
               <Text style={[styles.selectorText, !formData.patientName && styles.placeholder]}>
                 {formData.patientName || "Choose a patient"}
@@ -302,10 +362,7 @@ export default function ScheduleVisit() {
                 <Text style={styles.inputLabel}>
                   Time <Text style={styles.required}>*</Text>
                 </Text>
-                <TouchableOpacity
-                  style={[styles.selector, errors.time && styles.inputError]}
-                  onPress={() => setShowTimeModal(true)}
-                >
+                <TouchableOpacity style={[styles.selector, errors.time && styles.inputError]} onPress={openTimeModal}>
                   <Text style={[styles.selectorText, !formData.time && styles.placeholder]}>
                     {formData.time || "Select time"}
                   </Text>
@@ -321,15 +378,30 @@ export default function ScheduleVisit() {
           <Text style={styles.sectionTitle}>Location & Notes</Text>
 
           {renderInput("Location", "location", "e.g., Clinic Room 1, Video Call")}
-          {renderInput("Notes", "notes", "Enter any additional notes or special instructions", true)}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Notes</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Enter any additional notes or special instructions"
+              value={formData.notes}
+              onChangeText={(value) => updateFormData("notes", value)}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
         </View>
 
         <View style={styles.buttonContainer}>
           <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.scheduleButton} onPress={handleSchedule}>
-            <Text style={styles.scheduleButtonText}>Schedule Appointment</Text>
+          <TouchableOpacity
+            style={[styles.scheduleButton, loading && styles.disabledButton]}
+            onPress={handleSchedule}
+            disabled={loading}
+          >
+            <Text style={styles.scheduleButtonText}>{loading ? "Scheduling..." : "Schedule Appointment"}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -350,7 +422,7 @@ export default function ScheduleVisit() {
               </TouchableOpacity>
             </View>
             <FlatList
-              data={mockPatients}
+              data={patients}
               renderItem={renderPatientItem}
               keyExtractor={(item) => item.id}
               style={styles.modalList}
@@ -561,6 +633,9 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-SemiBold",
     color: Colors.white,
   },
+  disabledButton: {
+    backgroundColor: Colors.neutral[300],
+  },
   // Modal Styles
   modalOverlay: {
     flex: 1,
@@ -618,11 +693,6 @@ const styles = StyleSheet.create({
     color: Colors.neutral[500],
   },
   visitTypeInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  visitTypeDetails: {
     flex: 1,
   },
   visitTypeLabel: {
@@ -648,9 +718,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minWidth: 80,
   },
+  timeSlotDisabled: {
+    backgroundColor: Colors.neutral[200],
+  },
   timeSlotText: {
     fontSize: 14,
     fontFamily: "Inter-Medium",
     color: Colors.neutral[700],
+  },
+  timeSlotTextDisabled: {
+    color: Colors.neutral[400],
   },
 })

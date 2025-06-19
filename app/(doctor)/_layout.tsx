@@ -92,6 +92,7 @@ export default function DoctorLayout() {
       <Tabs.Screen name="settings/personal-info" options={{ href: null }} />
       <Tabs.Screen name="settings/privacy-security" options={{ href: null }} />
       <Tabs.Screen name="settings/terms-privacy" options={{ href: null }} />
+      <Tabs.Screen name="create" options={{ href: null }} />
     </Tabs>
   )
 }

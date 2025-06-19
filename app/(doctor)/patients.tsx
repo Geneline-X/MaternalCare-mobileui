@@ -1,99 +1,76 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from "react-native"
 import { Plus } from "phosphor-react-native"
 import { Colors } from "@/constants/colors"
 import { useFocusEffect } from "@react-navigation/native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useRouter } from "expo-router"
-import { apiClient } from "@/utils/api"
-
-interface Patient {
-  id: string
-  name: string
-  condition: string
-  lastVisit: string
-  age: number
-  phone: string
-  pregnancyWeek?: number
-  riskLevel: "Low" | "Medium" | "High"
-}
-
-const patientsData: Patient[] = [
-  {
-    id: "1",
-    name: "Sarah Johnson",
-    condition: "Pregnancy - 24 weeks",
-    lastVisit: "2024-01-15",
-    age: 28,
-    phone: "+1 (555) 123-4567",
-    pregnancyWeek: 24,
-    riskLevel: "Low",
-  },
-  {
-    id: "2",
-    name: "Emily Davis",
-    condition: "Pregnancy - 32 weeks",
-    lastVisit: "2024-02-01",
-    age: 32,
-    phone: "+1 (555) 234-5678",
-    pregnancyWeek: 32,
-    riskLevel: "Medium",
-  },
-  {
-    id: "3",
-    name: "Maria Rodriguez",
-    condition: "Pregnancy - 16 weeks",
-    lastVisit: "2024-02-10",
-    age: 25,
-    phone: "+1 (555) 345-6789",
-    pregnancyWeek: 16,
-    riskLevel: "Low",
-  },
-  {
-    id: "4",
-    name: "Jennifer Wilson",
-    condition: "Pregnancy - 38 weeks",
-    lastVisit: "2024-02-15",
-    age: 30,
-    phone: "+1 (555) 456-7890",
-    pregnancyWeek: 38,
-    riskLevel: "High",
-  },
-  {
-    id: "5",
-    name: "Lisa Thompson",
-    condition: "Pregnancy - 20 weeks",
-    lastVisit: "2024-02-20",
-    age: 27,
-    phone: "+1 (555) 567-8901",
-    pregnancyWeek: 20,
-    riskLevel: "Low",
-  },
-]
+import { useApiClient } from "@/utils/api"
+import { useToast } from "react-native-toast-notifications"
+import type { PatientListItem, PaginatedResponse, PatientSummary } from "@/types/api"
 
 export default function Patients() {
   const router = useRouter()
-  const [patients, setPatients] = useState(patientsData)
+  const [patients, setPatients] = useState<PatientListItem[]>([])
+  const [summary, setSummary] = useState<PatientSummary | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const apiClient = useApiClient()
+  const toast = useToast()
+
+  const fetchPatients = async () => {
+    try {
+      setRefreshing(true)
+
+      // Use caching with 10 minutes TTL for patients data
+      const cacheOptions = { ttl: 10 * 60 * 1000 } // 10 minutes
+
+      const [patientsResponse, summaryResponse] = await Promise.all([
+        apiClient.get<PaginatedResponse<PatientListItem>>(
+          "/api/fhir/Patient",
+          {
+            _page: 1,
+            _count: 50,
+            _include: "Patient:pregnancy",
+          },
+          cacheOptions,
+        ),
+        apiClient.get<PatientSummary>("/api/patients/summary", {}, cacheOptions),
+      ])
+
+      if (patientsResponse.success && patientsResponse.data) {
+        setPatients(patientsResponse.data.data)
+      }
+
+      if (summaryResponse.success && summaryResponse.data) {
+        setSummary(summaryResponse.data)
+      }
+    } catch (error) {
+      console.error("Error fetching patients:", error)
+      if ((error as Error).message?.includes("429")) {
+        toast.show("Rate limit reached. Using cached data if available.", { type: "warning" })
+      } else {
+        toast.show("Failed to load patients", { type: "danger" })
+      }
+    } finally {
+      setRefreshing(false)
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchPatients()
+  }, [])
 
   const onRefresh = useCallback(() => {
-    setRefreshing(true)
-    apiClient.getPatients().then((res) => {
-      setPatients(res)
-      setRefreshing(false)
-    })
+    fetchPatients()
   }, [])
 
   useFocusEffect(
     useCallback(() => {
-      // This will run when the screen comes into focus
-      console.log("Patients screen is focused")
-      return () => {
-        // This will run when the screen goes out of focus
-        console.log("Patients screen is unfocused")
-      }
+      fetchPatients()
     }, []),
   )
 
@@ -110,7 +87,7 @@ export default function Patients() {
     }
   }
 
-  const renderPatient = ({ item }: { item: Patient }) => (
+  const renderPatient = ({ item }: { item: PatientListItem }) => (
     <TouchableOpacity
       style={styles.patientItem}
       onPress={() => {
@@ -140,6 +117,16 @@ export default function Patients() {
     </TouchableOpacity>
   )
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading patients...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
@@ -149,31 +136,37 @@ export default function Patients() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.summaryContainer}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryNumber}>{patients.length}</Text>
-          <Text style={styles.summaryLabel}>Total Patients</Text>
+      {summary && (
+        <View style={styles.summaryContainer}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryNumber}>{summary.totalPatients}</Text>
+            <Text style={styles.summaryLabel}>Total Patients</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryNumber}>{summary.highRiskPatients}</Text>
+            <Text style={styles.summaryLabel}>High Risk</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryNumber}>{summary.dueSoonPatients}</Text>
+            <Text style={styles.summaryLabel}>Due Soon</Text>
+          </View>
         </View>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryNumber}>{patients.filter((p) => p.riskLevel === "High").length}</Text>
-          <Text style={styles.summaryLabel}>High Risk</Text>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryNumber}>
-            {patients.filter((p) => p.pregnancyWeek && p.pregnancyWeek > 36).length}
-          </Text>
-          <Text style={styles.summaryLabel}>Due Soon</Text>
-        </View>
-      </View>
+      )}
 
       <FlatList
         data={patients}
         renderItem={renderPatient}
         keyExtractor={(item) => item.id}
         style={styles.patientList}
-        contentContainerStyle={{ paddingBottom: 100 }} // Add padding for navigation
+        contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No patients found</Text>
+            <Text style={styles.emptySubtext}>Add your first patient to get started</Text>
+          </View>
+        }
       />
     </SafeAreaView>
   )
@@ -270,6 +263,31 @@ const viewStyles = StyleSheet.create({
   },
   patientMeta: {
     alignItems: "flex-end",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 16,
+    color: Colors.neutral[600],
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 100,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: Colors.neutral[600],
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.neutral[400],
   },
 })
 

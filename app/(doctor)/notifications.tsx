@@ -1,301 +1,208 @@
 "use client"
 
-import * as React from "react"
-import { useState, useEffect, useRef } from "react"
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  RefreshControl,
-  Modal,
-  ScrollView,
-  Platform,
-} from "react-native"
-import { useRouter } from "expo-router"
-import { useUser } from "@clerk/clerk-expo"
-import {
-  ArrowLeft,
-  Bell,
-  Plus,
-  Filter,
-  Search,
-  Clock,
-  AlertCircle,
-  CheckCircle,
-  Calendar,
-  Heart,
-  MessageSquare,
-} from "lucide-react-native"
+import React, { useState, useEffect } from "react"
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Alert } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
-import * as Notifications from "expo-notifications"
-import * as Device from "expo-device"
+import { useApiClient } from "../../utils/api"
+import { useToast } from "react-native-toast-notifications"
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-})
+// Types for Communication resources and transformed notifications
+interface CommunicationResource {
+  id: string
+  resourceType: "Communication"
+  status: string
+  subject?: { reference: string }
+  recipient: Array<{ reference: string }>
+  payload: Array<{ contentString: string }>
+  sent: string
+  category?: Array<{ text: string }>
+  medium?: Array<{ coding: Array<{ code: string }> }>
+}
 
 interface NotificationItem {
   id: string
   title: string
   message: string
-  type: "appointment" | "patient_update" | "emergency" | "reminder" | "system"
+  type: "appointment" | "emergency" | "reminder" | "general"
+  priority: "low" | "medium" | "high" | "urgent"
   timestamp: string
   isRead: boolean
-  priority: "low" | "medium" | "high"
   patientName?: string
   actionRequired?: boolean
 }
 
-interface ComposeNotification {
-  recipient: string
-  subject: string
-  message: string
-  priority: "low" | "medium" | "high"
-  type: "appointment" | "patient_update" | "reminder" | "general"
-}
-
-const mockNotifications: NotificationItem[] = [
-  {
-    id: "1",
-    title: "High-Risk Patient Alert",
-    message: "Sarah Johnson's blood pressure readings are concerning. Immediate attention required.",
-    type: "emergency",
-    timestamp: "2024-01-15T10:30:00Z",
-    isRead: false,
-    priority: "high",
-    patientName: "Sarah Johnson",
-    actionRequired: true,
-  },
-  {
-    id: "2",
-    title: "Appointment Reminder",
-    message: "You have 3 appointments scheduled for today starting at 2:00 PM.",
-    type: "appointment",
-    timestamp: "2024-01-15T08:00:00Z",
-    isRead: false,
-    priority: "medium",
-  },
-  {
-    id: "3",
-    title: "Patient Update",
-    message: "Emily Davis completed her prenatal vitamins intake for the week.",
-    type: "patient_update",
-    timestamp: "2024-01-14T16:45:00Z",
-    isRead: true,
-    priority: "low",
-    patientName: "Emily Davis",
-  },
-  {
-    id: "4",
-    title: "Lab Results Available",
-    message: "New lab results are available for Maria Rodriguez. Review required.",
-    type: "patient_update",
-    timestamp: "2024-01-14T14:20:00Z",
-    isRead: true,
-    priority: "medium",
-    patientName: "Maria Rodriguez",
-    actionRequired: true,
-  },
-  {
-    id: "5",
-    title: "System Maintenance",
-    message: "Scheduled system maintenance will occur tonight from 11 PM to 2 AM.",
-    type: "system",
-    timestamp: "2024-01-14T09:00:00Z",
-    isRead: true,
-    priority: "low",
-  },
-]
-
-export default function NotificationsScreen() {
-  const router = useRouter()
-  const { user } = useUser()
-  const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications)
+export default function Notifications() {
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [filter, setFilter] = useState<"all" | "unread" | "high_priority">("all")
-  const [searchQuery, setSearchQuery] = useState("")
-  const [showCompose, setShowCompose] = useState(false)
-  const [expoPushToken, setExpoPushToken] = useState<string>("")
-  const notificationListener = useRef<ReturnType<typeof Notifications.addNotificationReceivedListener> | null>(null)
-  const responseListener = useRef<ReturnType<typeof Notifications.addNotificationResponseReceivedListener> | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const apiClient = useApiClient()
+  const toast = useToast()
 
-  const [composeForm, setComposeForm] = useState<ComposeNotification>({
-    recipient: "",
-    subject: "",
-    message: "",
-    priority: "medium",
-    type: "general",
-  })
+  // Transform Communication resource to NotificationItem
+  const transformCommunicationToNotification = (comm: CommunicationResource): NotificationItem => {
+    const message = comm.payload?.[0]?.contentString || "No message content"
+    const category = comm.category?.[0]?.text || "general"
+    const timestamp = comm.sent || new Date().toISOString()
+
+    // Determine notification type and priority based on category and content
+    let type: NotificationItem["type"] = "general"
+    let priority: NotificationItem["priority"] = "medium"
+    let title = "Notification"
+    let actionRequired = false
+
+    // Parse category and message to determine type and priority
+    if (category.includes("appointment") || message.toLowerCase().includes("appointment")) {
+      type = "appointment"
+      title = "Appointment Update"
+      priority = "medium"
+    } else if (
+      category.includes("emergency") ||
+      message.toLowerCase().includes("emergency") ||
+      message.toLowerCase().includes("urgent")
+    ) {
+      type = "emergency"
+      title = "Emergency Alert"
+      priority = "urgent"
+      actionRequired = true
+    } else if (category.includes("reminder") || message.toLowerCase().includes("reminder")) {
+      type = "reminder"
+      title = "Reminder"
+      priority = "low"
+    } else if (message.toLowerCase().includes("missed")) {
+      type = "appointment"
+      title = "Missed Appointment"
+      priority = "high"
+      actionRequired = true
+    }
+
+    // Extract patient name if available from subject reference
+    let patientName: string | undefined
+    if (comm.subject?.reference) {
+      const [, patientId] = comm.subject.reference.split("/")
+      // In a real app, you'd fetch patient details, for now we'll use the ID
+      patientName = `Patient ${patientId}`
+    }
+
+    return {
+      id: comm.id,
+      title,
+      message,
+      type,
+      priority,
+      timestamp,
+      isRead: false, // Default to unread, would be managed by backend in real app
+      patientName,
+      actionRequired,
+    }
+  }
+
+  const fetchNotifications = async () => {
+    try {
+      setRefreshing(true)
+
+      // Fetch Communication resources from backend
+      const response = await apiClient.get<{ success: boolean; data: CommunicationResource[]; timestamp: string }>(
+        "/api/fhir/Communication", // Assuming this endpoint exists for fetching notifications
+        {
+          _page: 1,
+          _count: 50,
+          _sort: "sent",
+          _order: "desc",
+        },
+      )
+
+      if (response.success && response.data) {
+        const communications = response.data.data || []
+        const transformedNotifications = communications.map(transformCommunicationToNotification)
+
+        // Sort by priority and timestamp
+        const sortedNotifications = transformedNotifications.sort((a, b) => {
+          const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 }
+          const priorityDiff = priorityOrder[b.priority] - priorityOrder[a.priority]
+          if (priorityDiff !== 0) return priorityDiff
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        })
+
+        setNotifications(sortedNotifications)
+        setUnreadCount(sortedNotifications.filter((n) => !n.isRead).length)
+      }
+    } catch (error) {
+      console.error("Error fetching notifications:", error)
+      toast.show("Failed to load notifications", { type: "danger" })
+    } finally {
+      setRefreshing(false)
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    registerForPushNotificationsAsync().then((token) => {
-      if (token) {
-        setExpoPushToken(token)
-      }
-    })
-
-    // Listen for incoming notifications
-    notificationListener.current = Notifications.addNotificationReceivedListener((notification) => {
-      console.log("Notification received:", notification)
-      // Add new notification to the list
-      const newNotification: NotificationItem = {
-        id: Date.now().toString(),
-        title: notification.request.content.title || "New Notification",
-        message: notification.request.content.body || "",
-        type: "system",
-        timestamp: new Date().toISOString(),
-        isRead: false,
-        priority: "medium",
-      }
-      setNotifications((prev) => [newNotification, ...prev])
-    })
-
-    // Listen for notification responses
-    responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
-      console.log("Notification response:", response)
-    })
-
-    return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current)
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current)
-      }
-    }
+    fetchNotifications()
   }, [])
-
-  const registerForPushNotificationsAsync = async () => {
-    let token
-
-    if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync("default", {
-        name: "default",
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: "#FF231F7C",
-      })
-    }
-
-    if (Device.isDevice) {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync()
-      let finalStatus = existingStatus
-      if (existingStatus !== "granted") {
-        const { status } = await Notifications.requestPermissionsAsync()
-        finalStatus = status
-      }
-      if (finalStatus !== "granted") {
-        Alert.alert("Failed to get push token for push notification!")
-        return
-      }
-      token = (await Notifications.getExpoPushTokenAsync()).data
-      console.log("Expo Push Token:", token)
-    } else {
-      Alert.alert("Must use physical device for Push Notifications")
-    }
-
-    return token
-  }
-
-  const sendPushNotification = async (expoPushToken: string, title: string, body: string) => {
-    const message = {
-      to: expoPushToken,
-      sound: "default",
-      title: title,
-      body: body,
-      data: { someData: "goes here" },
-    }
-
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(message),
-    })
-  }
 
   const onRefresh = React.useCallback(() => {
-    setRefreshing(true)
-    // Simulate API call
-    setTimeout(() => {
-      setRefreshing(false)
-    }, 2000)
+    fetchNotifications()
   }, [])
 
-  const markAsRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((notification) => (notification.id === id ? { ...notification, isRead: true } : notification)),
-    )
-  }
+  const markAsRead = async (notificationId: string) => {
+    try {
+      // Update local state immediately for better UX
+      setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n)))
+      setUnreadCount((prev) => Math.max(0, prev - 1))
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((notification) => ({ ...notification, isRead: true })))
-  }
-
-  const deleteNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((notification) => notification.id !== id))
-  }
-
-  const getFilteredNotifications = () => {
-    let filtered = notifications
-
-    // Apply search filter
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (notification) =>
-          notification.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          notification.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          notification.patientName?.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
+      // In a real app, you'd call an API to mark as read
+      // await apiClient.patch(`/api/communications/${notificationId}`, { isRead: true })
+    } catch (error) {
+      console.error("Error marking notification as read:", error)
+      toast.show("Failed to mark as read", { type: "danger" })
     }
+  }
 
-    // Apply status filter
-    switch (filter) {
-      case "unread":
-        filtered = filtered.filter((notification) => !notification.isRead)
-        break
-      case "high_priority":
-        filtered = filtered.filter((notification) => notification.priority === "high")
-        break
+  const markAllAsRead = async () => {
+    try {
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+      setUnreadCount(0)
+
+      // In a real app, you'd call an API to mark all as read
+      // await apiClient.patch("/api/communications/mark-all-read")
+
+      toast.show("All notifications marked as read", { type: "success" })
+    } catch (error) {
+      console.error("Error marking all as read:", error)
+      toast.show("Failed to mark all as read", { type: "danger" })
+    }
+  }
+
+  const getPriorityColor = (priority: NotificationItem["priority"]) => {
+    switch (priority) {
+      case "urgent":
+        return Colors.error[500]
+      case "high":
+        return Colors.warning[500]
+      case "medium":
+        return Colors.primary[500]
+      case "low":
+        return Colors.neutral[400]
       default:
-        break
+        return Colors.neutral[400]
     }
-
-    return filtered
   }
 
-  const getNotificationIcon = (type: string, priority: string) => {
-    const iconColor =
-      priority === "high" ? Colors.error[500] : priority === "medium" ? Colors.warning[500] : Colors.primary[500]
-
+  const getTypeIcon = (type: NotificationItem["type"]) => {
     switch (type) {
-      case "emergency":
-        return <AlertCircle size={24} color={Colors.error[500]} />
       case "appointment":
-        return <Calendar size={24} color={iconColor} />
-      case "patient_update":
-        return <Heart size={24} color={iconColor} />
+        return "calendar-outline"
+      case "emergency":
+        return "warning-outline"
       case "reminder":
-        return <Clock size={24} color={iconColor} />
-      case "system":
-        return <Bell size={24} color={iconColor} />
+        return "alarm-outline"
+      case "general":
+        return "information-circle-outline"
       default:
-        return <MessageSquare size={24} color={iconColor} />
+        return "notifications-outline"
     }
   }
 
@@ -305,80 +212,104 @@ export default function NotificationsScreen() {
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
 
     if (diffInHours < 1) {
-      return "Just now"
+      const diffInMinutes = Math.floor(diffInHours * 60)
+      return `${diffInMinutes}m ago`
     } else if (diffInHours < 24) {
       return `${Math.floor(diffInHours)}h ago`
+    } else if (diffInHours < 48) {
+      return "Yesterday"
     } else {
       return date.toLocaleDateString()
     }
   }
 
-  const handleSendNotification = async () => {
-    if (!composeForm.recipient || !composeForm.subject || !composeForm.message) {
-      Alert.alert("Error", "Please fill in all required fields")
-      return
+  const handleNotificationPress = (notification: NotificationItem) => {
+    if (!notification.isRead) {
+      markAsRead(notification.id)
     }
 
-    try {
-      // In a real app, you would send this to your backend API
-      // For demo purposes, we'll send a push notification to the current device
-      if (expoPushToken) {
-        await sendPushNotification(expoPushToken, composeForm.subject, composeForm.message)
-        Alert.alert("Success", "Notification sent successfully!")
-      }
-
-      // Reset form
-      setComposeForm({
-        recipient: "",
-        subject: "",
-        message: "",
-        priority: "medium",
-        type: "general",
-      })
-      setShowCompose(false)
-    } catch (error) {
-      Alert.alert("Error", "Failed to send notification")
+    if (notification.actionRequired) {
+      Alert.alert("Action Required", `${notification.message}\n\nWhat would you like to do?`, [
+        { text: "Dismiss", style: "cancel" },
+        {
+          text: "View Details",
+          onPress: () => {
+            // Navigate to relevant screen
+            console.log("Navigate to details for:", notification.id)
+          },
+        },
+        ...(notification.type === "appointment"
+          ? [
+              {
+                text: "Call Patient",
+                onPress: () => {
+                  console.log("Call patient for:", notification.patientName)
+                },
+              },
+            ]
+          : []),
+      ])
     }
   }
 
   const renderNotification = ({ item }: { item: NotificationItem }) => (
     <TouchableOpacity
-      style={[styles.notificationCard, !item.isRead && styles.unreadNotification]}
-      onPress={() => markAsRead(item.id)}
+      style={[
+        styles.notificationCard,
+        !item.isRead && styles.unreadCard,
+        item.actionRequired && styles.actionRequiredCard,
+      ]}
+      onPress={() => handleNotificationPress(item)}
     >
       <View style={styles.notificationHeader}>
-        <View style={styles.notificationIcon}>{getNotificationIcon(item.type, item.priority)}</View>
-        <View style={styles.notificationContent}>
-          <View style={styles.notificationTitleRow}>
-            <Text style={[styles.notificationTitle, !item.isRead && styles.unreadTitle]}>{item.title}</Text>
-            <Text style={styles.timestamp}>{formatTimestamp(item.timestamp)}</Text>
-          </View>
-          {item.patientName && <Text style={styles.patientName}>Patient: {item.patientName}</Text>}
-          <Text style={styles.notificationMessage} numberOfLines={2}>
-            {item.message}
-          </Text>
-          {item.actionRequired && (
-            <View style={styles.actionBadge}>
-              <Text style={styles.actionBadgeText}>Action Required</Text>
+        <View style={styles.iconContainer}>
+          <Ionicons name={getTypeIcon(item.type)} size={24} color={getPriorityColor(item.priority)} />
+          {item.priority === "urgent" && (
+            <View style={styles.urgentBadge}>
+              <Ionicons name="flash" size={12} color="white" />
             </View>
           )}
         </View>
+
+        <View style={styles.notificationContent}>
+          <View style={styles.titleRow}>
+            <Text style={[styles.title, !item.isRead && styles.unreadTitle]}>{item.title}</Text>
+            {!item.isRead && <View style={styles.unreadDot} />}
+          </View>
+
+          {item.patientName && <Text style={styles.patientName}>{item.patientName}</Text>}
+
+          <Text style={styles.message} numberOfLines={2}>
+            {item.message}
+          </Text>
+
+          <View style={styles.metaRow}>
+            <Text style={styles.timestamp}>{formatTimestamp(item.timestamp)}</Text>
+            {item.actionRequired && (
+              <View style={styles.actionBadge}>
+                <Text style={styles.actionBadgeText}>Action Required</Text>
+              </View>
+            )}
+          </View>
+        </View>
       </View>
-      {!item.isRead && <View style={styles.unreadDot} />}
     </TouchableOpacity>
   )
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length
-  const filteredNotifications = getFilteredNotifications()
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading notifications...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ArrowLeft size={24} color={Colors.neutral[600]} />
-        </TouchableOpacity>
-        <View style={styles.headerTitle}>
+        <View style={styles.headerLeft}>
           <Text style={styles.title}>Notifications</Text>
           {unreadCount > 0 && (
             <View style={styles.unreadBadge}>
@@ -386,167 +317,31 @@ export default function NotificationsScreen() {
             </View>
           )}
         </View>
-        <TouchableOpacity style={styles.composeButton} onPress={() => setShowCompose(true)}>
-          <Plus size={20} color={Colors.white} />
-        </TouchableOpacity>
-      </View>
 
-      {/* Search and Filter */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Search size={20} color={Colors.neutral[400]} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search notifications..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Filter size={20} color={Colors.primary[600]} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Filter Tabs */}
-      <View style={styles.filterTabs}>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === "all" && styles.activeFilterTab]}
-          onPress={() => setFilter("all")}
-        >
-          <Text style={[styles.filterTabText, filter === "all" && styles.activeFilterTabText]}>All</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === "unread" && styles.activeFilterTab]}
-          onPress={() => setFilter("unread")}
-        >
-          <Text style={[styles.filterTabText, filter === "unread" && styles.activeFilterTabText]}>Unread</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filter === "high_priority" && styles.activeFilterTab]}
-          onPress={() => setFilter("high_priority")}
-        >
-          <Text style={[styles.filterTabText, filter === "high_priority" && styles.activeFilterTabText]}>
-            High Priority
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Actions Row */}
-      {unreadCount > 0 && (
-        <View style={styles.actionsRow}>
+        {unreadCount > 0 && (
           <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
-            <CheckCircle size={16} color={Colors.primary[600]} />
-            <Text style={styles.markAllText}>Mark all as read</Text>
+            <Text style={styles.markAllText}>Mark All Read</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
+      </View>
 
-      {/* Notifications List */}
       <FlatList
-        data={filteredNotifications}
+        data={notifications}
         renderItem={renderNotification}
         keyExtractor={(item) => item.id}
         style={styles.notificationsList}
+        contentContainerStyle={styles.listContainer}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Bell size={48} color={Colors.neutral[400]} />
-            <Text style={styles.emptyStateText}>No notifications found</Text>
-            <Text style={styles.emptyStateSubtext}>You're all caught up!</Text>
+          <View style={styles.emptyContainer}>
+            <Ionicons name="notifications-off-outline" size={64} color={Colors.neutral[400]} />
+            <Text style={styles.emptyText}>No notifications</Text>
+            <Text style={styles.emptySubtext}>You're all caught up!</Text>
           </View>
         }
       />
-
-      {/* Compose Modal */}
-      <Modal visible={showCompose} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowCompose(false)}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Send Notification</Text>
-            <TouchableOpacity onPress={handleSendNotification}>
-              <Text style={styles.modalSendText}>Send</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Recipient *</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="Enter patient name or doctor ID"
-                value={composeForm.recipient}
-                onChangeText={(text) => setComposeForm({ ...composeForm, recipient: text })}
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Subject *</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="Enter notification subject"
-                value={composeForm.subject}
-                onChangeText={(text) => setComposeForm({ ...composeForm, subject: text })}
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Type</Text>
-              <View style={styles.typeButtons}>
-                {["general", "appointment", "patient_update", "reminder"].map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.typeButton, composeForm.type === type && styles.activeTypeButton]}
-                    onPress={() => setComposeForm({ ...composeForm, type: type as any })}
-                  >
-                    <Text style={[styles.typeButtonText, composeForm.type === type && styles.activeTypeButtonText]}>
-                      {type.replace("_", " ").toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Priority</Text>
-              <View style={styles.priorityButtons}>
-                {["low", "medium", "high"].map((priority) => (
-                  <TouchableOpacity
-                    key={priority}
-                    style={[styles.priorityButton, composeForm.priority === priority && styles.activePriorityButton]}
-                    onPress={() => setComposeForm({ ...composeForm, priority: priority as any })}
-                  >
-                    <Text
-                      style={[
-                        styles.priorityButtonText,
-                        composeForm.priority === priority && styles.activePriorityButtonText,
-                      ]}
-                    >
-                      {priority.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Message *</Text>
-              <TextInput
-                style={[styles.formInput, styles.messageInput]}
-                placeholder="Enter your message..."
-                value={composeForm.message}
-                onChangeText={(text) => setComposeForm({ ...composeForm, message: text })}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-              />
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
-    </View>
+    </SafeAreaView>
   )
 }
 
@@ -557,8 +352,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: Spacing.lg,
     paddingTop: 60,
     paddingBottom: Spacing.lg,
@@ -566,124 +361,47 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.neutral[100],
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.neutral[100],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: {
+  headerLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
   },
   title: {
-    fontSize: 20,
-    fontFamily: "Poppins-SemiBold",
+    fontSize: 24,
+    fontFamily: "Poppins-Bold",
     color: Colors.neutral[800],
   },
   unreadBadge: {
     backgroundColor: Colors.error[500],
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 6,
   },
   unreadBadgeText: {
-    color: Colors.white,
+    color: "white",
     fontSize: 12,
     fontFamily: "Inter-Bold",
   },
-  composeButton: {
-    backgroundColor: Colors.primary[500],
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    ...Shadows.sm,
-  },
-  searchContainer: {
-    flexDirection: "row",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    gap: Spacing.sm,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.white,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.neutral[200],
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    color: Colors.neutral[800],
-    marginLeft: Spacing.sm,
-  },
-  filterButton: {
-    backgroundColor: Colors.white,
-    width: 44,
-    height: 44,
-    borderRadius: BorderRadius.lg,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: Colors.neutral[200],
-  },
-  filterTabs: {
-    flexDirection: "row",
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
-  },
-  filterTab: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.neutral[200],
-  },
-  activeFilterTab: {
-    backgroundColor: Colors.primary[500],
-    borderColor: Colors.primary[500],
-  },
-  filterTabText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: Colors.neutral[600],
-  },
-  activeFilterTabText: {
-    color: Colors.white,
-  },
-  actionsRow: {
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
   markAllButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.primary[50],
+    borderRadius: BorderRadius.md,
   },
   markAllText: {
+    color: Colors.primary[600],
     fontSize: 14,
     fontFamily: "Inter-Medium",
-    color: Colors.primary[600],
   },
   notificationsList: {
     flex: 1,
+  },
+  listContainer: {
     paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   notificationCard: {
     backgroundColor: Colors.white,
@@ -691,201 +409,116 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginBottom: Spacing.md,
     ...Shadows.sm,
-    position: "relative",
   },
-  unreadNotification: {
+  unreadCard: {
     borderLeftWidth: 4,
     borderLeftColor: Colors.primary[500],
   },
+  actionRequiredCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.error[500],
+  },
   notificationHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    gap: Spacing.md,
   },
-  notificationIcon: {
-    marginRight: Spacing.md,
-    marginTop: 2,
+  iconContainer: {
+    position: "relative",
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.neutral[100],
+    borderRadius: 20,
+  },
+  urgentBadge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    backgroundColor: Colors.error[500],
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   notificationContent: {
     flex: 1,
   },
-  notificationTitleRow: {
+  titleRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: Spacing.xs,
-  },
-  notificationTitle: {
-    fontSize: 16,
-    fontFamily: "Inter-SemiBold",
-    color: Colors.neutral[800],
-    flex: 1,
-    marginRight: Spacing.sm,
+    marginBottom: 4,
   },
   unreadTitle: {
     fontFamily: "Inter-Bold",
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary[500],
+  },
+  patientName: {
+    fontSize: 12,
+    fontFamily: "Inter-Medium",
+    color: Colors.primary[600],
+    marginBottom: 4,
+  },
+  message: {
+    fontSize: 14,
+    fontFamily: "Inter-Regular",
+    color: Colors.neutral[700],
+    lineHeight: 20,
+    marginBottom: Spacing.sm,
+  },
+  metaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   timestamp: {
     fontSize: 12,
     fontFamily: "Inter-Regular",
     color: Colors.neutral[500],
   },
-  patientName: {
-    fontSize: 12,
-    fontFamily: "Inter-Medium",
-    color: Colors.primary[600],
-    marginBottom: Spacing.xs,
-  },
-  notificationMessage: {
-    fontSize: 14,
-    fontFamily: "Inter-Regular",
-    color: Colors.neutral[600],
-    lineHeight: 20,
-    marginBottom: Spacing.sm,
-  },
   actionBadge: {
-    backgroundColor: Colors.warning[100],
+    backgroundColor: Colors.error[100],
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
     borderRadius: BorderRadius.sm,
-    alignSelf: "flex-start",
   },
   actionBadgeText: {
     fontSize: 10,
     fontFamily: "Inter-Bold",
-    color: Colors.warning[700],
+    color: Colors.error[700],
   },
-  unreadDot: {
-    position: "absolute",
-    top: Spacing.md,
-    right: Spacing.md,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primary[500],
-  },
-  emptyState: {
-    alignItems: "center",
+  loadingContainer: {
+    flex: 1,
     justifyContent: "center",
-    paddingVertical: Spacing.xxxl,
+    alignItems: "center",
   },
-  emptyStateText: {
+  loadingText: {
+    fontSize: 16,
+    color: Colors.neutral[600],
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 100,
+  },
+  emptyText: {
     fontSize: 18,
-    fontFamily: "Inter-SemiBold",
+    fontFamily: "Poppins-SemiBold",
     color: Colors.neutral[600],
     marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
   },
-  emptyStateSubtext: {
+  emptySubtext: {
     fontSize: 14,
     fontFamily: "Inter-Regular",
-    color: Colors.neutral[500],
-    marginTop: Spacing.xs,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: Colors.white,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: 60,
-    paddingBottom: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.neutral[100],
-  },
-  modalCancelText: {
-    fontSize: 16,
-    fontFamily: "Inter-Medium",
-    color: Colors.neutral[600],
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: "Inter-SemiBold",
-    color: Colors.neutral[800],
-  },
-  modalSendText: {
-    fontSize: 16,
-    fontFamily: "Inter-SemiBold",
-    color: Colors.primary[600],
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-  },
-  formGroup: {
-    marginBottom: Spacing.lg,
-  },
-  formLabel: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: Colors.neutral[700],
-    marginBottom: Spacing.sm,
-  },
-  formInput: {
-    borderWidth: 1,
-    borderColor: Colors.neutral[200],
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    fontSize: 16,
-    fontFamily: "Inter-Regular",
-    color: Colors.neutral[800],
-    backgroundColor: Colors.neutral[50],
-  },
-  messageInput: {
-    height: 100,
-    textAlignVertical: "top",
-  },
-  typeButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.sm,
-  },
-  typeButton: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.neutral[100],
-    borderWidth: 1,
-    borderColor: Colors.neutral[200],
-  },
-  activeTypeButton: {
-    backgroundColor: Colors.primary[500],
-    borderColor: Colors.primary[500],
-  },
-  typeButtonText: {
-    fontSize: 12,
-    fontFamily: "Inter-Medium",
-    color: Colors.neutral[600],
-  },
-  activeTypeButtonText: {
-    color: Colors.white,
-  },
-  priorityButtons: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  priorityButton: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.neutral[100],
-    borderWidth: 1,
-    borderColor: Colors.neutral[200],
-    alignItems: "center",
-  },
-  activePriorityButton: {
-    backgroundColor: Colors.primary[500],
-    borderColor: Colors.primary[500],
-  },
-  priorityButtonText: {
-    fontSize: 12,
-    fontFamily: "Inter-Medium",
-    color: Colors.neutral[600],
-  },
-  activePriorityButtonText: {
-    color: Colors.white,
+    color: Colors.neutral[400],
   },
 })

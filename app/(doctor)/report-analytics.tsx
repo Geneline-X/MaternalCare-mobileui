@@ -1,122 +1,165 @@
 "use client"
 
 import * as React from "react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { LineChart, BarChart, PieChart } from "react-native-chart-kit"
 import { Dimensions } from "react-native"
 import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
-import type { AnalyticsMetrics, ChartDataset, PieChartData, ReportInsight, ExportOptions } from "../../types/app"
+import type { ReportInsight, ExportOptions } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-
+import { apiClient } from "@/utils/api"
 
 const screenWidth = Dimensions.get("window").width
 
-const mockAnalyticsData = {
-  patientTrends: {
-    labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-    datasets: [
-      {
-        data: [45, 52, 48, 61, 58, 67],
-        color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
-        strokeWidth: 3,
-      },
-    ],
-  } as ChartDataset,
-  riskDistribution: [
-    {
-      name: "Low Risk",
-      population: 65,
-      color: "#4CAF50",
-      legendFontColor: "#333",
-      legendFontSize: 12,
-    },
-    {
-      name: "Medium Risk",
-      population: 25,
-      color: "#FF9800",
-      legendFontColor: "#333",
-      legendFontSize: 12,
-    },
-    {
-      name: "High Risk",
-      population: 10,
-      color: "#F44336",
-      legendFontColor: "#333",
-      legendFontSize: 12,
-    },
-  ] as PieChartData[],
-  gestationalAge: {
-    labels: ["<12w", "12-24w", "24-32w", "32-36w", ">36w"],
-    datasets: [
-      {
-        data: [8, 15, 22, 18, 12],
-        color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`,
-      },
-    ],
-  } as ChartDataset,
-  monthlyMetrics: {
-    totalPatients: 124,
-    newPatients: 18,
-    completedPregnancies: 12,
-    averageVisits: 4.2,
-    satisfactionScore: 4.8,
-  } as AnalyticsMetrics,
-}
+// const mockAnalyticsData = {
+//   patientTrends: {
+//     labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+//     datasets: [
+//       {
+//         data: [45, 52, 48, 61, 58, 67],
+//         color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
+//         strokeWidth: 3,
+//       },
+//     ],
+//   } as ChartDataset,
+//   riskDistribution: [
+//     {
+//       name: "Low Risk",
+//       population: 65,
+//       color: "#4CAF50",
+//       legendFontColor: "#333",
+//       legendFontSize: 12,
+//     },
+//     {
+//       name: "Medium Risk",
+//       population: 25,
+//       color: "#FF9800",
+//       legendFontColor: "#333",
+//       legendFontSize: 12,
+//     },
+//     {
+//       name: "High Risk",
+//       population: 10,
+//       color: "#F44336",
+//       legendFontColor: "#333",
+//       legendFontSize: 12,
+//     },
+//   ] as PieChartData[],
+//   gestationalAge: {
+//     labels: ["<12w", "12-24w", "24-32w", "32-36w", ">36w"],
+//     datasets: [
+//       {
+//         data: [8, 15, 22, 18, 12],
+//         color: (opacity = 1) => `rgba(156, 39, 176, ${opacity})`,
+//       },
+//     ],
+//   } as ChartDataset,
+//   monthlyMetrics: {
+//     totalPatients: 124,
+//     newPatients: 18,
+//     completedPregnancies: 12,
+//     averageVisits: 4.2,
+//     satisfactionScore: 4.8,
+//   } as AnalyticsMetrics,
+// }
 
-const insights: ReportInsight[] = [
-  {
-    id: "1",
-    type: "positive",
-    title: "Positive Trends",
-    description: "Overall health metrics showing improvement",
-    actionItems: [
-      "15% increase in prenatal visit attendance",
-      "Average blood pressure readings improved by 8%",
-      "Patient satisfaction scores increased to 4.8/5",
-    ],
-  },
-  {
-    id: "2",
-    type: "concern",
-    title: "Areas of Concern",
-    description: "Issues requiring attention",
-    actionItems: [
-      "12% of patients show elevated glucose levels",
-      "3 patients missed their last scheduled appointments",
-      "Weight gain monitoring needs improvement",
-    ],
-  },
-  {
-    id: "3",
-    type: "recommendation",
-    title: "Recommendations",
-    description: "Suggested improvements",
-    actionItems: [
-      "Implement automated appointment reminders",
-      "Increase glucose monitoring frequency for at-risk patients",
-      "Develop nutrition counseling program",
-    ],
-  },
-]
+// const insights: ReportInsight[] = [
+//   {
+//     id: "1",
+//     type: "positive",
+//     title: "Positive Trends",
+//     description: "Overall health metrics showing improvement",
+//     actionItems: [
+//       "15% increase in prenatal visit attendance",
+//       "Average blood pressure readings improved by 8%",
+//       "Patient satisfaction scores increased to 4.8/5",
+//     ],
+//   },
+//   {
+//     id: "2",
+//     type: "concern",
+//     title: "Areas of Concern",
+//     description: "Issues requiring attention",
+//     actionItems: [
+//       "12% of patients show elevated glucose levels",
+//       "3 patients missed their last scheduled appointments",
+//       "Weight gain monitoring needs improvement",
+//     ],
+//   },
+//   {
+//     id: "3",
+//     type: "recommendation",
+//     title: "Recommendations",
+//     description: "Suggested improvements",
+//     actionItems: [
+//       "Implement automated appointment reminders",
+//       "Increase glucose monitoring frequency for at-risk patients",
+//       "Develop nutrition counseling program",
+//     ],
+//   },
+// ]
 
 export default function ReportsAnalytics() {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedTimeframe, setSelectedTimeframe] = useState<"1month" | "3months" | "6months" | "1year">("6months")
   const [selectedChart, setSelectedChart] = useState<"trends" | "risk" | "age">("trends")
 
+  const [analyticsData, setAnalyticsData] = useState<any>(null)
+  const [insights, setInsights] = useState<ReportInsight[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchData()
+  }, [selectedTimeframe])
+
+  const fetchData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const metricsResponse = await fetch(`/api/fhir/analytics/metrics?timeframe=${selectedTimeframe}`)
+      const metricsData = await metricsResponse.json()
+
+      const chartsResponse = await fetch(`/api/fhir/analytics/charts?timeframe=${selectedTimeframe}`)
+      const chartsData = await chartsResponse.json()
+
+      const insightsResponse = await fetch(`/api/fhir/analytics/insights?timeframe=${selectedTimeframe}`)
+      const insightsData = await insightsResponse.json()
+
+      setAnalyticsData({
+        monthlyMetrics: metricsData,
+        patientTrends: chartsData.patientTrends,
+        riskDistribution: chartsData.riskDistribution,
+        gestationalAge: chartsData.gestationalAge,
+      })
+      setInsights(insightsData)
+    } catch (e: any) {
+      setError(e.message || "Failed to load data")
+      console.error("Error fetching data:", e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const onRefresh = React.useCallback(() => {
     setRefreshing(true)
-    setTimeout(() => {
-      setRefreshing(false)
-    }, 2000)
-  }, [])
+    fetchData().finally(() => setRefreshing(false))
+  }, [selectedTimeframe])
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    handleExport("pdf")
+  }
+
+  const handleExportCSV = async () => {
+    handleExport("csv")
+  }
+
+  const handleExport = async (format: "pdf" | "csv") => {
     const exportOptions: ExportOptions = {
-      format: "pdf",
+      format: format,
       includeCharts: true,
       includePatientData: true,
       includeHealthMetrics: true,
@@ -126,31 +169,55 @@ export default function ReportsAnalytics() {
       },
     }
 
-    Alert.alert("Export PDF", "Generate a comprehensive report in PDF format?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Export", onPress: () => console.log("Exporting PDF...", exportOptions) },
-    ])
+    Alert.alert(
+      `Export ${format.toUpperCase()}`,
+      `Generate a comprehensive report in ${format.toUpperCase()} format?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Export",
+          onPress: async () => {
+            try {
+              const response = await fetch("/api/fhir/analytics/export", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(exportOptions),
+              })
+
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`)
+              }
+
+              const blob = await response.blob()
+              const url = window.URL.createObjectURL(blob)
+              const a = document.createElement("a")
+              a.href = url
+              a.download = `report.${format}`
+              document.body.appendChild(a)
+              a.click()
+              document.body.removeChild(a)
+              window.URL.revokeObjectURL(url)
+
+              console.log(`Exporting ${format.toUpperCase()}...`, exportOptions)
+            } catch (e: any) {
+              setError(e.message || `Failed to export ${format.toUpperCase()}`)
+              console.error(`Error exporting ${format.toUpperCase()}:`, e)
+            }
+          },
+        },
+      ],
+    )
   }
 
-  const handleExportCSV = () => {
-    const exportOptions: ExportOptions = {
-      format: "csv",
-      includeCharts: false,
-      includePatientData: true,
-      includeHealthMetrics: true,
-      dateRange: {
-        start: "2024-01-01",
-        end: "2024-06-30",
-      },
-    }
-
-    Alert.alert("Export CSV", "Export raw data in CSV format?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Export", onPress: () => console.log("Exporting CSV...", exportOptions) },
-    ])
-  }
-
-  const renderMetricCard = (title: string, value: string | number, icon: keyof typeof Ionicons.glyphMap, color: string, subtitle?: string) => (
+  const renderMetricCard = (
+    title: string,
+    value: string | number,
+    icon: keyof typeof Ionicons.glyphMap,
+    color: string,
+    subtitle?: string,
+  ) => (
     <View style={[styles.metricCard, { borderLeftColor: color }]}>
       <View style={styles.metricHeader}>
         <View style={[styles.metricIcon, { backgroundColor: `${color}15` }]}>
@@ -207,6 +274,29 @@ export default function ReportsAnalytics() {
     )
   }
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text>Error: {error}</Text>
+          <TouchableOpacity onPress={fetchData}>
+            <Text>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
@@ -255,40 +345,44 @@ export default function ReportsAnalytics() {
         <View style={styles.metricsSection}>
           <Text style={styles.sectionTitle}>Key Metrics</Text>
           <View style={styles.metricsGrid}>
-            {renderMetricCard(
-              "Total Patients",
-              mockAnalyticsData.monthlyMetrics.totalPatients,
-              "people",
-              "#2F80ED",
-              "Active cases",
-            )}
-            {renderMetricCard(
-              "New Patients",
-              mockAnalyticsData.monthlyMetrics.newPatients,
-              "person-add",
-              "#4CAF50",
-              "This month",
-            )}
-            {renderMetricCard(
-              "Completed",
-              mockAnalyticsData.monthlyMetrics.completedPregnancies,
-              "checkmark-circle",
-              "#9C27B0",
-              "Deliveries",
-            )}
-            {renderMetricCard(
-              "Avg Visits",
-              mockAnalyticsData.monthlyMetrics.averageVisits,
-              "calendar",
-              "#FF9800",
-              "Per patient",
-            )}
-            {renderMetricCard(
-              "Satisfaction",
-              `${mockAnalyticsData.monthlyMetrics.satisfactionScore}/5`,
-              "star",
-              "#FFC107",
-              "Patient rating",
+            {analyticsData?.monthlyMetrics && (
+              <>
+                {renderMetricCard(
+                  "Total Patients",
+                  analyticsData.monthlyMetrics.totalPatients,
+                  "people",
+                  "#2F80ED",
+                  "Active cases",
+                )}
+                {renderMetricCard(
+                  "New Patients",
+                  analyticsData.monthlyMetrics.newPatients,
+                  "person-add",
+                  "#4CAF50",
+                  "This month",
+                )}
+                {renderMetricCard(
+                  "Completed",
+                  analyticsData.monthlyMetrics.completedPregnancies,
+                  "checkmark-circle",
+                  "#9C27B0",
+                  "Deliveries",
+                )}
+                {renderMetricCard(
+                  "Avg Visits",
+                  analyticsData.monthlyMetrics.averageVisits,
+                  "calendar",
+                  "#FF9800",
+                  "Per patient",
+                )}
+                {renderMetricCard(
+                  "Satisfaction",
+                  `${analyticsData.monthlyMetrics.satisfactionScore}/5`,
+                  "star",
+                  "#FFC107",
+                  "Patient rating",
+                )}
+              </>
             )}
           </View>
         </View>
@@ -317,11 +411,11 @@ export default function ReportsAnalytics() {
           </View>
 
           <View style={styles.chartCard}>
-            {selectedChart === "trends" && (
+            {selectedChart === "trends" && analyticsData?.patientTrends && (
               <>
                 <Text style={styles.chartTitle}>Patient Trends (6 Months)</Text>
                 <LineChart
-                  data={mockAnalyticsData.patientTrends}
+                  data={analyticsData.patientTrends}
                   width={screenWidth - 80}
                   height={220}
                   chartConfig={{
@@ -345,11 +439,11 @@ export default function ReportsAnalytics() {
               </>
             )}
 
-            {selectedChart === "risk" && (
+            {selectedChart === "risk" && analyticsData?.riskDistribution && (
               <>
                 <Text style={styles.chartTitle}>Risk Distribution</Text>
                 <PieChart
-                  data={mockAnalyticsData.riskDistribution}
+                  data={analyticsData.riskDistribution}
                   width={screenWidth - 80}
                   height={220}
                   chartConfig={{
@@ -364,11 +458,11 @@ export default function ReportsAnalytics() {
               </>
             )}
 
-            {selectedChart === "age" && (
+            {selectedChart === "age" && analyticsData?.gestationalAge && (
               <>
                 <Text style={styles.chartTitle}>Gestational Age Distribution</Text>
                 <BarChart
-                  data={mockAnalyticsData.gestationalAge}
+                  data={analyticsData.gestationalAge}
                   width={screenWidth - 80}
                   height={220}
                   chartConfig={{
@@ -414,8 +508,6 @@ export default function ReportsAnalytics() {
           </View>
         </View>
       </ScrollView>
-
-   
     </SafeAreaView>
   )
 }
@@ -654,5 +746,15 @@ const styles = StyleSheet.create({
     color: Colors.neutral[600],
     textAlign: "center",
     lineHeight: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
 })

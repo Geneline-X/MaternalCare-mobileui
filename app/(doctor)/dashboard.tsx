@@ -1,6 +1,6 @@
 "use client"
 
-import * as React from "react"
+import type * as React from "react"
 import { useState, useCallback, useEffect } from "react"
 import {
   View,
@@ -13,108 +13,260 @@ import {
   TextInput,
   FlatList,
   Modal,
+  Alert,
 } from "react-native"
 import { useUser, useAuth } from "@clerk/clerk-expo"
 import { Ionicons } from "@expo/vector-icons"
 import { LineChart, BarChart } from "react-native-chart-kit"
 import { useRouter } from "expo-router"
-import type { SearchResult, DashboardData } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { useApiClient } from "../../utils/api"
 
-
-// Mock data for dashboard analytics
-const mockDashboardData: DashboardData = {
-  totalPregnancies: 47,
-  totalPatients: 124,
-  highRiskCases: 8,
-  scheduledAppointments: 23,
-  monthlyTrends: {
-    labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-    datasets: [
-      {
-        data: [20, 45, 28, 80, 99, 43],
-        color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
-        strokeWidth: 3,
-      },
-    ],
-  },
-  weeklyVisits: {
-    labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    datasets: [
-      {
-        data: [12, 19, 15, 25, 22, 8, 5],
-        color: (opacity = 1) => `rgba(39, 174, 96, ${opacity})`,
-      },
-    ],
-  },
+// API Response Types
+interface DashboardMetrics {
+  totalPregnancies: number
+  totalPatients: number
+  highRiskCases: number
+  scheduledAppointments: number
+  newPatientsThisMonth: number
+  completedPregnanciesThisMonth: number
 }
 
-// Mock data for search functionality
-const mockSearchData: SearchResult[] = [
-  {
-    id: "1",
-    type: "patient",
-    title: "Sarah Johnson",
-    subtitle: "28 years • 32 weeks pregnant",
-    category: "High Risk Patient",
-  },
-  {
-    id: "2",
-    type: "patient",
-    title: "Emily Davis",
-    subtitle: "24 years • 28 weeks pregnant",
-    category: "Low Risk Patient",
-  },
-  {
-    id: "3",
-    type: "appointment",
-    title: "Sarah Johnson - Prenatal Checkup",
-    subtitle: "Today, 2:00 PM",
-    category: "Upcoming Appointment",
-  },
-  {
-    id: "4",
-    type: "health",
-    title: "Blood Pressure Reading",
-    subtitle: "Sarah Johnson - 140/90 mmHg",
-    category: "Vital Signs",
-  },
-]
+interface ChartDataset {
+  data: number[]
+  color?: (opacity?: number) => string
+  strokeWidth?: number
+}
+
+interface ChartData {
+  labels: string[]
+  datasets: ChartDataset[]
+}
+
+interface DashboardAnalytics {
+  monthlyTrends: ChartData
+  weeklyVisits: ChartData
+}
+
+interface TodaySchedule {
+  appointments: Array<{
+    id: string
+    patientId: string
+    patientName: string
+    time: string
+    type: string
+    status: "confirmed" | "pending" | "cancelled"
+    duration: number
+    notes?: string
+  }>
+}
+
+interface SearchResult {
+  id: string
+  type: "patient" | "appointment" | "health" | "form"
+  title: string
+  subtitle: string
+  category: string
+}
 
 const Dashboard: React.FC = () => {
   const { user } = useUser()
-  const { signOut } = useAuth()
+  const { getToken } = useAuth()
+  const apiClient = useApiClient()
+  const router = useRouter()
+
+  // State management
   const [refreshing, setRefreshing] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [showSearchResults, setShowSearchResults] = useState(false)
   const [selectedChart, setSelectedChart] = useState<"trends" | "visits">("trends")
-  const router = useRouter()
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null)
+  const [todaySchedule, setTodaySchedule] = useState<TodaySchedule | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true)
-    // Simulate data refresh
-    setTimeout(() => setRefreshing(false), 1500)
-  }, [])
+  // Fallback analytics data
+  const getFallbackAnalytics = (): DashboardAnalytics => ({
+    monthlyTrends: {
+      labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      datasets: [
+        {
+          data: [20, 45, 28, 80, 99, 43],
+          color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
+          strokeWidth: 2,
+        },
+      ],
+    },
+    weeklyVisits: {
+      labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      datasets: [
+        {
+          data: [12, 19, 15, 25, 22, 18, 20],
+          color: (opacity = 1) => `rgba(39, 174, 96, ${opacity})`,
+        },
+      ],
+    },
+  })
 
-  const isDoctor = (user?.unsafeMetadata?.role as string) === "doctor"
+  // Validate chart data
+  const validateChartData = (data: ChartData): boolean => {
+    return !!(
+      data &&
+      Array.isArray(data.labels) &&
+      data.labels.length > 0 &&
+      Array.isArray(data.datasets) &&
+      data.datasets.length > 0 &&
+      Array.isArray(data.datasets[0].data) &&
+      data.datasets[0].data.length === data.labels.length
+    )
+  }
 
-  // Real-time search functionality
+  // Load dashboard data with caching
+  const loadDashboardData = useCallback(
+    async (forceRefresh = false) => {
+      try {
+        setError(null)
+
+        // Define cache TTLs for different data types
+        const CACHE_OPTIONS = {
+          metrics: { ttl: 10 * 60 * 1000, forceRefresh }, // 10 minutes for metrics
+          analytics: { ttl: 30 * 60 * 1000, forceRefresh }, // 30 minutes for analytics
+          schedule: { ttl: 5 * 60 * 1000, forceRefresh }, // 5 minutes for schedule
+        }
+
+        // Metrics with caching
+        try {
+          const metricsResponse = await apiClient.get<{ success: boolean; data: DashboardMetrics }>(
+            "/api/fhir/dashboard/metrics",
+            {},
+            CACHE_OPTIONS.metrics,
+          )
+          if (metricsResponse?.success && metricsResponse.data?.data) {
+            setMetrics(metricsResponse.data.data)
+          }
+        } catch (metricsError) {
+          console.error("Failed to load metrics:", metricsError)
+        }
+
+        // Analytics with caching and validation
+        try {
+          const analyticsResponse = await apiClient.get<{ success: boolean; data: DashboardAnalytics }>(
+            "/api/fhir/dashboard/analytics",
+            {},
+            CACHE_OPTIONS.analytics,
+          )
+
+          if (analyticsResponse?.success && analyticsResponse.data?.data) {
+            const analyticsData = analyticsResponse.data.data
+            console.log("Raw analytics data:", analyticsData)
+
+            // Validate analytics data structure
+            if (
+              analyticsData.monthlyTrends &&
+              analyticsData.weeklyVisits &&
+              validateChartData(analyticsData.monthlyTrends) &&
+              validateChartData(analyticsData.weeklyVisits)
+            ) {
+              setAnalytics(analyticsData)
+              console.log("Analytics data loaded successfully")
+            } else {
+              console.warn("Invalid analytics data structure, using fallback")
+              setAnalytics(getFallbackAnalytics())
+            }
+          } else {
+            console.warn("Analytics response failed, using fallback")
+            setAnalytics(getFallbackAnalytics())
+          }
+        } catch (analyticsError) {
+          console.error("Failed to load analytics:", analyticsError)
+          setAnalytics(getFallbackAnalytics())
+        }
+
+        // Today's Schedule with caching
+        try {
+          const scheduleResponse = await apiClient.get<{ success: boolean; data: TodaySchedule }>(
+            "/api/fhir/dashboard/schedule/today",
+            {},
+            CACHE_OPTIONS.schedule,
+          )
+          if (scheduleResponse?.success && scheduleResponse.data?.data) {
+            setTodaySchedule(scheduleResponse.data.data)
+          }
+        } catch (scheduleError) {
+          console.error("Failed to load schedule:", scheduleError)
+        }
+      } catch (error: any) {
+        console.error("Error loading dashboard data:", error)
+        setError(error.message || "Failed to load dashboard data")
+
+        // Set fallback analytics even on error
+        if (!analytics) {
+          setAnalytics(getFallbackAnalytics())
+        }
+      } finally {
+        setLoading(false)
+      }
+    },
+    [apiClient, analytics],
+  )
+
+  // Search functionality with caching
+  const performSearch = useCallback(
+    async (query: string) => {
+      if (!query.trim()) {
+        setSearchResults([])
+        setShowSearchResults(false)
+        return
+      }
+
+      try {
+        const response = await apiClient.get<{
+          success: boolean
+          data: { results: SearchResult[]; totalCount: number; searchTime: number }
+        }>(
+          `/api/fhir/search`,
+          { q: query, limit: 10 },
+          { ttl: 2 * 60 * 1000 }, // 2 minutes cache for search results
+        )
+
+        if (response?.success && response.data?.data?.results) {
+          setSearchResults(response.data.data.results)
+          setShowSearchResults(true)
+        } else {
+          setSearchResults([])
+        }
+      } catch (error: any) {
+        console.error("Search error:", error)
+        setSearchResults([])
+        if (error.message?.includes("429")) {
+          Alert.alert("Rate Limit", "Too many requests. Please try again later.")
+        }
+      }
+    },
+    [apiClient],
+  )
+
+  // Debounced search
   useEffect(() => {
-    if (searchQuery.trim().length > 0) {
-      const filtered = mockSearchData.filter(
-        (item) =>
-          item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.category.toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-      setSearchResults(filtered)
-      setShowSearchResults(true)
-    } else {
-      setSearchResults([])
-      setShowSearchResults(false)
-    }
-  }, [searchQuery])
+    const timeoutId = setTimeout(() => {
+      performSearch(searchQuery)
+    }, 300)
+
+    return () => clearTimeout(timeoutId)
+  }, [searchQuery, performSearch])
+
+  // Initial data load
+  useEffect(() => {
+    loadDashboardData()
+  }, [loadDashboardData])
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await loadDashboardData(true) // Force refresh to bypass cache
+    setRefreshing(false)
+  }, [loadDashboardData])
 
   const getSearchIcon = (type: SearchResult["type"]) => {
     switch (type) {
@@ -161,13 +313,13 @@ const Dashboard: React.FC = () => {
         router.push(`./health-monitoring`)
         break
       case "form":
-        router.push(`./dynamic-forms`)
+        router.push(`./dynamic-form`)
         break
     }
   }
 
   const handleChartPress = () => {
-    router.push("./reports-analytics")
+    router.push("./report-analytics")
   }
 
   const renderSearchResult = ({ item }: { item: SearchResult }) => (
@@ -183,7 +335,13 @@ const Dashboard: React.FC = () => {
     </TouchableOpacity>
   )
 
-  const renderOverviewCard = (title: string, value: number, icon: keyof typeof Ionicons.glyphMap, color: string, subtitle?: string) => (
+  const renderOverviewCard = (
+    title: string,
+    value: number,
+    icon: keyof typeof Ionicons.glyphMap,
+    color: string,
+    subtitle?: string,
+  ) => (
     <View style={[styles.overviewCard, { borderLeftColor: color }]}>
       <View style={styles.overviewCardHeader}>
         <View style={[styles.overviewCardIcon, { backgroundColor: `${color}15` }]}>
@@ -198,10 +356,20 @@ const Dashboard: React.FC = () => {
     </View>
   )
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading dashboard...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: 100 }]} // Add padding for navigation
+        contentContainerStyle={[styles.scroll, { paddingBottom: 100 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Enhanced Header */}
@@ -277,27 +445,23 @@ const Dashboard: React.FC = () => {
         </View>
 
         {/* Overview Cards */}
-        <View style={styles.overviewSection}>
-          <Text style={styles.sectionTitle}>Overview</Text>
-          <View style={styles.overviewGrid}>
-            {renderOverviewCard(
-              "Total Pregnancies",
-              mockDashboardData.totalPregnancies,
-              "heart",
-              "#E91E63",
-              "Active cases",
-            )}
-            {renderOverviewCard("Total Patients", mockDashboardData.totalPatients, "people", "#2F80ED", "Registered")}
-            {renderOverviewCard("High-Risk Cases", mockDashboardData.highRiskCases, "warning", "#FF5722", "This month")}
-            {renderOverviewCard(
-              "Scheduled Appointments",
-              mockDashboardData.scheduledAppointments,
-              "calendar",
-              "#4CAF50",
-              "Upcoming",
-            )}
+        {metrics && (
+          <View style={styles.overviewSection}>
+            <Text style={styles.sectionTitle}>Overview</Text>
+            <View style={styles.overviewGrid}>
+              {renderOverviewCard("Total Pregnancies", metrics.totalPregnancies, "heart", "#E91E63", "Active cases")}
+              {renderOverviewCard("Total Patients", metrics.totalPatients, "people", "#2F80ED", "Registered")}
+              {renderOverviewCard("High-Risk Cases", metrics.highRiskCases, "warning", "#FF5722", "This month")}
+              {renderOverviewCard(
+                "Scheduled Appointments",
+                metrics.scheduledAppointments,
+                "calendar",
+                "#4CAF50",
+                "Upcoming",
+              )}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Enhanced Quick Actions */}
         <View style={styles.quickActions}>
@@ -325,136 +489,156 @@ const Dashboard: React.FC = () => {
         </View>
 
         {/* Patient Analytics Chart */}
-        <View style={styles.section}>
-          <View style={styles.chartHeader}>
-            <Text style={styles.sectionTitle}>Patient Analytics</Text>
-            <View style={styles.chartToggle}>
-              <TouchableOpacity
-                style={[styles.toggleButton, selectedChart === "trends" && styles.toggleButtonActive]}
-                onPress={() => setSelectedChart("trends")}
-              >
-                <Text style={[styles.toggleText, selectedChart === "trends" && styles.toggleTextActive]}>Trends</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.toggleButton, selectedChart === "visits" && styles.toggleButtonActive]}
-                onPress={() => setSelectedChart("visits")}
-              >
-                <Text style={[styles.toggleText, selectedChart === "visits" && styles.toggleTextActive]}>Visits</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.chartCard} onPress={handleChartPress}>
-            <View style={styles.chartTapHint}>
-              <Ionicons name="analytics-outline" size={16} color="#666" />
-              <Text style={styles.chartTapText}>Tap to view detailed analytics</Text>
-            </View>
-
-            {selectedChart === "trends" ? (
-              <LineChart
-                data={mockDashboardData.monthlyTrends}
-                width={Dimensions.get("window").width - 80}
-                height={200}
-                chartConfig={{
-                  backgroundColor: "#ffffff",
-                  backgroundGradientFrom: "#ffffff",
-                  backgroundGradientTo: "#ffffff",
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
-                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                  style: { borderRadius: 16 },
-                  propsForDots: {
-                    r: "6",
-                    strokeWidth: "2",
-                    stroke: "#2F80ED",
-                  },
-                }}
-                bezier
-                style={styles.chart}
-              />
-            ) : (
-              <BarChart
-                data={mockDashboardData.weeklyVisits}
-                width={Dimensions.get("window").width - 80}
-                height={200}
-                chartConfig={{
-                  backgroundColor: "#ffffff",
-                  backgroundGradientFrom: "#ffffff",
-                  backgroundGradientTo: "#ffffff",
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => `rgba(39, 174, 96, ${opacity})`,
-                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                  style: { borderRadius: 16 }
-                }}
-                style={styles.chart}
-                yAxisLabel="Visits"
-                yAxisSuffix=""
-              />
-            )}
-
-            <View style={styles.chartInsights}>
-              <View style={styles.insightItem}>
-                <Text style={styles.insightValue}>+12%</Text>
-                <Text style={styles.insightLabel}>vs last month</Text>
-              </View>
-              <View style={styles.insightItem}>
-                <Text style={styles.insightValue}>89</Text>
-                <Text style={styles.insightLabel}>avg visits/month</Text>
-              </View>
-              <View style={styles.insightItem}>
-                <Text style={styles.insightValue}>4.8</Text>
-                <Text style={styles.insightLabel}>satisfaction</Text>
+        {analytics && (
+          <View style={styles.section}>
+            <View style={styles.chartHeader}>
+              <Text style={styles.sectionTitle}>Patient Analytics</Text>
+              <View style={styles.chartToggle}>
+                <TouchableOpacity
+                  style={[styles.toggleButton, selectedChart === "trends" && styles.toggleButtonActive]}
+                  onPress={() => setSelectedChart("trends")}
+                >
+                  <Text style={[styles.toggleText, selectedChart === "trends" && styles.toggleTextActive]}>Trends</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.toggleButton, selectedChart === "visits" && styles.toggleButtonActive]}
+                  onPress={() => setSelectedChart("visits")}
+                >
+                  <Text style={[styles.toggleText, selectedChart === "visits" && styles.toggleTextActive]}>Visits</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          </TouchableOpacity>
-        </View>
 
-        {/* Today's Schedule */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's Schedule</Text>
-          <View style={styles.card}>
-            <View style={styles.scheduleItem}>
-              <View style={styles.scheduleTime}>
-                <Text style={styles.scheduleTimeText}>10:00</Text>
-                <Text style={styles.scheduleAmPm}>AM</Text>
+            <TouchableOpacity style={styles.chartCard} onPress={handleChartPress}>
+              <View style={styles.chartTapHint}>
+                <Ionicons name="analytics-outline" size={16} color="#666" />
+                <Text style={styles.chartTapText}>Tap to view detailed analytics</Text>
               </View>
-              <View style={styles.scheduleDetails}>
-                <Text style={styles.schedulePatient}>Sarah Johnson</Text>
-                <Text style={styles.scheduleType}>Prenatal Checkup</Text>
-                <View style={styles.scheduleStatus}>
-                  <View style={[styles.statusDot, { backgroundColor: "#4CAF50" }]} />
-                  <Text style={styles.statusText}>Confirmed</Text>
+
+              {selectedChart === "trends" ? (
+                validateChartData(analytics.monthlyTrends) ? (
+                  <LineChart
+                    data={analytics.monthlyTrends}
+                    width={Dimensions.get("window").width - 80}
+                    height={200}
+                    chartConfig={{
+                      backgroundColor: "#ffffff",
+                      backgroundGradientFrom: "#ffffff",
+                      backgroundGradientTo: "#ffffff",
+                      decimalPlaces: 0,
+                      color: (opacity = 1) => `rgba(47, 128, 237, ${opacity})`,
+                      labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                      style: { borderRadius: 16 },
+                      propsForDots: {
+                        r: "6",
+                        strokeWidth: "2",
+                        stroke: "#2F80ED",
+                      },
+                    }}
+                    bezier
+                    style={styles.chart}
+                  />
+                ) : (
+                  <View style={styles.chartError}>
+                    <Text style={styles.chartErrorText}>Chart data unavailable</Text>
+                  </View>
+                )
+              ) : validateChartData(analytics.weeklyVisits) ? (
+                <BarChart
+                  data={analytics.weeklyVisits}
+                  width={Dimensions.get("window").width - 80}
+                  height={200}
+                  chartConfig={{
+                    backgroundColor: "#ffffff",
+                    backgroundGradientFrom: "#ffffff",
+                    backgroundGradientTo: "#ffffff",
+                    decimalPlaces: 0,
+                    color: (opacity = 1) => `rgba(39, 174, 96, ${opacity})`,
+                    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                    style: { borderRadius: 16 },
+                  }}
+                  style={styles.chart}
+                  yAxisLabel=""
+                  yAxisSuffix=""
+                />
+              ) : (
+                <View style={styles.chartError}>
+                  <Text style={styles.chartErrorText}>Chart data unavailable</Text>
+                </View>
+              )}
+
+              <View style={styles.chartInsights}>
+                <View style={styles.insightItem}>
+                  <Text style={styles.insightValue}>+12%</Text>
+                  <Text style={styles.insightLabel}>vs last month</Text>
+                </View>
+                <View style={styles.insightItem}>
+                  <Text style={styles.insightValue}>89</Text>
+                  <Text style={styles.insightLabel}>avg visits/month</Text>
+                </View>
+                <View style={styles.insightItem}>
+                  <Text style={styles.insightValue}>4.8</Text>
+                  <Text style={styles.insightLabel}>satisfaction</Text>
                 </View>
               </View>
-              <TouchableOpacity style={styles.scheduleAction}>
-                <Ionicons name="chevron-forward" size={20} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.scheduleItem}>
-              <View style={styles.scheduleTime}>
-                <Text style={styles.scheduleTimeText}>2:30</Text>
-                <Text style={styles.scheduleAmPm}>PM</Text>
-              </View>
-              <View style={styles.scheduleDetails}>
-                <Text style={styles.schedulePatient}>Emily Davis</Text>
-                <Text style={styles.scheduleType}>Ultrasound</Text>
-                <View style={styles.scheduleStatus}>
-                  <View style={[styles.statusDot, { backgroundColor: "#FF9800" }]} />
-                  <Text style={styles.statusText}>Pending</Text>
-                </View>
-              </View>
-              <TouchableOpacity style={styles.scheduleAction}>
-                <Ionicons name="chevron-forward" size={20} color="#666" />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.viewAllButton} onPress={() => router.push("./appointments")}>
-              <Text style={styles.viewAllText}>View All Appointments</Text>
-              <Ionicons name="arrow-forward" size={16} color="#2F80ED" />
             </TouchableOpacity>
           </View>
-        </View>
+        )}
+
+        {/* Today's Schedule */}
+        {todaySchedule && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Today's Schedule</Text>
+            <View style={styles.card}>
+              {todaySchedule.appointments.length > 0 ? (
+                todaySchedule.appointments.map((appointment, index) => (
+                  <View key={appointment.id} style={styles.scheduleItem}>
+                    <View style={styles.scheduleTime}>
+                      <Text style={styles.scheduleTimeText}>
+                        {appointment.time.split(":")[0]}:{appointment.time.split(":")[1]}
+                      </Text>
+                      <Text style={styles.scheduleAmPm}>
+                        {Number.parseInt(appointment.time.split(":")[0]) >= 12 ? "PM" : "AM"}
+                      </Text>
+                    </View>
+                    <View style={styles.scheduleDetails}>
+                      <Text style={styles.schedulePatient}>{appointment.patientName}</Text>
+                      <Text style={styles.scheduleType}>{appointment.type}</Text>
+                      <View style={styles.scheduleStatus}>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            {
+                              backgroundColor:
+                                appointment.status === "confirmed"
+                                  ? "#4CAF50"
+                                  : appointment.status === "pending"
+                                    ? "#FF9800"
+                                    : "#F44336",
+                            },
+                          ]}
+                        />
+                        <Text style={styles.statusText}>{appointment.status}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity style={styles.scheduleAction}>
+                      <Ionicons name="chevron-forward" size={20} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.emptySchedule}>
+                  <Text style={styles.emptyScheduleText}>No appointments scheduled for today</Text>
+                </View>
+              )}
+
+              <TouchableOpacity style={styles.viewAllButton} onPress={() => router.push("./appointments")}>
+                <Text style={styles.viewAllText}>View All Appointments</Text>
+                <Ionicons name="arrow-forward" size={16} color="#2F80ED" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       {/* Search Results Modal */}
@@ -486,7 +670,6 @@ const Dashboard: React.FC = () => {
           </View>
         </TouchableOpacity>
       </Modal>
-
     </SafeAreaView>
   )
 }
@@ -500,6 +683,17 @@ const styles = StyleSheet.create({
   },
   scroll: {
     paddingBottom: 40,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8FAFF",
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#666",
+    fontFamily: "Inter-Medium",
   },
   header: {
     backgroundColor: "#2F80ED",
@@ -822,6 +1016,19 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     borderRadius: 16,
   },
+  chartError: {
+    height: 200,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8F9FA",
+    borderRadius: 8,
+    marginVertical: 8,
+  },
+  chartErrorText: {
+    fontSize: 14,
+    color: "#666",
+    fontFamily: "Inter-Medium",
+  },
   chartInsights: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -910,6 +1117,15 @@ const styles = StyleSheet.create({
     fontFamily: "Inter-SemiBold",
     color: "#2F80ED",
     marginRight: 6,
+  },
+  emptySchedule: {
+    paddingVertical: 20,
+    alignItems: "center",
+  },
+  emptyScheduleText: {
+    fontSize: 14,
+    color: "#666",
+    fontFamily: "Inter-Regular",
   },
   // Search Results Modal Styles
   searchModalOverlay: {

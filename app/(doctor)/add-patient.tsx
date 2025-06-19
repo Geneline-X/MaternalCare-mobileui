@@ -16,11 +16,43 @@ import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
-import { FormErrors } from "../../types/app"
+import { useApiClient } from "../../utils/api"
+import type { FormErrors } from "../../types/app"
+import type { ApiResponse } from "../../types/api"
+
+interface PatientCreateRequest {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  dateOfBirth: string
+  address?: string
+  emergencyContactName: string
+  emergencyContactPhone: string
+  medicalHistory?: string
+  allergies?: string
+  currentMedications?: string
+  isHighRisk: boolean
+  bloodType?: string
+  insurance?: string
+}
+
+interface PatientCreateResponse {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  dateOfBirth: string
+  isHighRisk: boolean
+  createdAt: string
+}
 
 export default function AddPatient() {
-    
   const router = useRouter()
+  const apiClient = useApiClient()
+  const [loading, setLoading] = useState(false)
+
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -58,7 +90,7 @@ export default function AddPatient() {
     }
 
     // Phone validation
-    const phoneRegex = /^\+?[\d\s\-$$$$]+$/
+    const phoneRegex = /^\+?[\d\s\-()]+$/
     if (formData.phone && !phoneRegex.test(formData.phone)) {
       newErrors.phone = "Please enter a valid phone number"
     }
@@ -67,21 +99,52 @@ export default function AddPatient() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSave = () => {
-    if (validateForm()) {
-      // Here you would typically save to your backend
-      Alert.alert("Success", "Patient has been added successfully!", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ])
-    } else {
+  const handleSave = async () => {
+    if (!validateForm()) {
       Alert.alert("Error", "Please fill in all required fields correctly.")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const patientData: PatientCreateRequest = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
+        dateOfBirth: formData.dateOfBirth,
+        address: formData.address || undefined,
+        emergencyContactName: formData.emergencyContactName,
+        emergencyContactPhone: formData.emergencyContactPhone,
+        medicalHistory: formData.medicalHistory || undefined,
+        allergies: formData.allergies || undefined,
+        currentMedications: formData.currentMedications || undefined,
+        isHighRisk: formData.isHighRisk,
+        bloodType: formData.bloodType || undefined,
+        insurance: formData.insurance || undefined,
+      }
+
+      const response: ApiResponse<PatientCreateResponse> = await apiClient.post("/api/fhir/Patient", patientData)
+
+      if (response.success) {
+        Alert.alert("Success", "Patient has been added successfully!", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ])
+      } else {
+        throw new Error(response.message || "Failed to create patient")
+      }
+    } catch (error) {
+      console.error("Error creating patient:", error)
+      Alert.alert("Error", "Failed to create patient. Please try again.")
+    } finally {
+      setLoading(false)
     }
   }
 
-  const updateFormData = (field: keyof FormErrors, value: string) => {
+  const updateFormData = (field: keyof typeof formData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
     // Clear error when user starts typing
     if (errors[field]) {
@@ -89,46 +152,48 @@ export default function AddPatient() {
     }
   }
 
-  const renderInput = (label: string, field: keyof typeof formData, placeholder: string, multiline = false, keyboardType: 'default' | 'numeric' | 'email-address' | 'phone-pad' = "default") => {
-  const keyboardTypeMap: { [key: string]: 'default' | 'numeric' | 'email-address' | 'phone-pad' } = {
-    'default': 'default',
-    'numeric': 'numeric',
-    'email-address': 'email-address',
-    'phone-pad': 'phone-pad'
-  };
+  const renderInput = (
+    label: string,
+    field: keyof typeof formData,
+    placeholder: string,
+    multiline = false,
+    keyboardType: "default" | "numeric" | "email-address" | "phone-pad" = "default",
+  ) => {
+    const isRequired = [
+      "firstName",
+      "lastName",
+      "email",
+      "phone",
+      "dateOfBirth",
+      "emergencyContactName",
+      "emergencyContactPhone",
+    ].includes(field)
 
-  return (
-    <View style={styles.inputGroup}>
-      <Text style={styles.inputLabel}>
-        {label}
-        {[
-          "firstName",
-          "lastName",
-          "email",
-          "phone",
-          "dateOfBirth",
-          "emergencyContactName",
-          "emergencyContactPhone",
-        ].includes(field) && <Text style={styles.required}> *</Text>}
-      </Text>
-      <TextInput
-        style={[styles.input, multiline && styles.textArea, errors[field] && styles.inputError]}
-        placeholder={placeholder}
-        value={typeof formData[field] === 'boolean' ? formData[field].toString() : formData[field]}
-        onChangeText={(value) => updateFormData(field, value)}
-        multiline={multiline}
-        numberOfLines={multiline ? 4 : 1}
-        keyboardType={keyboardTypeMap[keyboardType]}
-      />
-      {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
-    </View>
-  );
-}
+    return (
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>
+          {label}
+          {isRequired && <Text style={styles.required}> *</Text>}
+        </Text>
+        <TextInput
+          style={[styles.input, multiline && styles.textArea, errors[field] && styles.inputError]}
+          placeholder={placeholder}
+          value={typeof formData[field] === "boolean" ? formData[field].toString() : formData[field]}
+          onChangeText={(value) => updateFormData(field, value)}
+          multiline={multiline}
+          numberOfLines={multiline ? 4 : 1}
+          keyboardType={keyboardType}
+          editable={!loading}
+        />
+        {errors[field] && <Text style={styles.errorText}>{errors[field]}</Text>}
+      </View>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} disabled={loading}>
           <Ionicons name="arrow-back" size={24} color={Colors.neutral[800]} />
         </TouchableOpacity>
         <Text style={styles.title}>Add New Patient</Text>
@@ -140,13 +205,17 @@ export default function AddPatient() {
           <Text style={styles.sectionTitle}>Personal Information</Text>
 
           <View style={styles.row}>
-            <View style={styles.halfWidth}>{renderInput("First Name", "firstName", "Enter first name", false, "default")}</View>
-            <View style={styles.halfWidth}>{renderInput("Last Name", "lastName", "Enter last name", false, "default")}</View>
+            <View style={styles.halfWidth}>
+              {renderInput("First Name", "firstName", "Enter first name", false, "default")}
+            </View>
+            <View style={styles.halfWidth}>
+              {renderInput("Last Name", "lastName", "Enter last name", false, "default")}
+            </View>
           </View>
 
           {renderInput("Email Address", "email", "Enter email address", false, "email-address")}
           {renderInput("Phone Number", "phone", "Enter phone number", false, "phone-pad")}
-          {renderInput("Date of Birth", "dateOfBirth", "DD/MM/YYYY")}
+          {renderInput("Date of Birth", "dateOfBirth", "YYYY-MM-DD")}
           {renderInput("Address", "address", "Enter full address", true)}
         </View>
 
@@ -175,19 +244,24 @@ export default function AddPatient() {
             </View>
             <Switch
               value={formData.isHighRisk}
-              onValueChange={(value) => updateFormData("isHighRisk", value.toString())}
+              onValueChange={(value) => updateFormData("isHighRisk", value)}
               trackColor={{ false: Colors.neutral[300], true: Colors.error[200] }}
               thumbColor={formData.isHighRisk ? Colors.error[500] : Colors.neutral[500]}
+              disabled={loading}
             />
           </View>
         </View>
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()}>
+          <TouchableOpacity style={styles.cancelButton} onPress={() => router.back()} disabled={loading}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <Text style={styles.saveButtonText}>Save Patient</Text>
+          <TouchableOpacity
+            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+            onPress={handleSave}
+            disabled={loading}
+          >
+            <Text style={styles.saveButtonText}>{loading ? "Creating..." : "Save Patient"}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -329,6 +403,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
     alignItems: "center",
+  },
+  saveButtonDisabled: {
+    backgroundColor: Colors.neutral[400],
   },
   saveButtonText: {
     fontSize: 16,

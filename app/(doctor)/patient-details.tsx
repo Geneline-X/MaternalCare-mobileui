@@ -1,7 +1,16 @@
 "use client"
 
-import { useState } from "react"
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, SafeAreaView, Dimensions } from "react-native"
+import { useState, useEffect } from "react"
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  SafeAreaView,
+  Dimensions,
+  ActivityIndicator,
+} from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { Colors } from "@/constants/colors"
@@ -9,63 +18,100 @@ import { LineChart } from "react-native-chart-kit"
 
 const screenWidth = Dimensions.get("window").width
 
-// Mock patient data - in real app, this would come from API
-const getPatientData = (patientId: string) => {
-  const patients = {
-    "1": {
-      id: "1",
-      name: "Sarah Johnson",
-      age: 28,
-      phone: "+1 (555) 123-4567",
-      email: "sarah.johnson@email.com",
-      emergencyContact: "John Johnson - +1 (555) 987-6543",
-      pregnancyWeek: 24,
-      dueDate: "2024-08-15",
-      trimester: "Second",
-      riskLevel: "Low",
-      bloodType: "O+",
-      lastVisit: "2024-01-15",
-      nextAppointment: "2024-02-15",
-      weight: "65 kg",
-      bloodPressure: "120/80",
-      heartRate: "72 bpm",
-      conditions: ["Gestational Diabetes"],
-      medications: ["Prenatal Vitamins", "Iron Supplements"],
-      allergies: ["Penicillin"],
-    },
-    "2": {
-      id: "2",
-      name: "Emily Davis",
-      age: 32,
-      phone: "+1 (555) 234-5678",
-      email: "emily.davis@email.com",
-      emergencyContact: "Michael Davis - +1 (555) 876-5432",
-      pregnancyWeek: 32,
-      dueDate: "2024-06-20",
-      trimester: "Third",
-      riskLevel: "Medium",
-      bloodType: "A+",
-      lastVisit: "2024-02-01",
-      nextAppointment: "2024-02-08",
-      weight: "72 kg",
-      bloodPressure: "130/85",
-      heartRate: "78 bpm",
-      conditions: ["Hypertension"],
-      medications: ["Prenatal Vitamins", "Blood Pressure Medication"],
-      allergies: ["None"],
-    },
-    // Add more patients as needed
-  }
-
-  return patients[patientId as keyof typeof patients] || patients["1"]
+interface Patient {
+  id: string
+  name: string
+  age: number
+  phone: string
+  email: string
+  emergencyContact: string
+  pregnancyWeek: number
+  dueDate: string
+  trimester: string
+  riskLevel: string
+  bloodType: string
+  lastVisit: string
+  nextAppointment: string
+  weight: string
+  bloodPressure: string
+  heartRate: string
+  conditions: string[]
+  medications: string[]
+  allergies: string[]
 }
 
 export default function PatientDetails() {
   const { patientId } = useLocalSearchParams<{ patientId: string }>()
   const router = useRouter()
   const [activeTab, setActiveTab] = useState("overview")
+  const [patient, setPatient] = useState<Patient | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const patient = getPatientData(patientId || "1")
+  useEffect(() => {
+    const fetchPatientDetails = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const response = await fetch(`/api/fhir/Patient/${patientId}`)
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        const data = await response.json()
+        // Transform FHIR Patient resource to UI format
+        const transformedPatient: Patient = {
+          id: data.id,
+          name: data.name[0].given.join(" ") + " " + data.name[0].family,
+          age: calculateAge(data.birthDate),
+          phone: data.telecom?.find((t: any) => t.system === "phone")?.value || "N/A",
+          email: data.telecom?.find((t: any) => t.system === "email")?.value || "N/A",
+          emergencyContact: data.telecom?.find((t: any) => t.system === "phone")?.value || "N/A", // This would need to be fetched from relatedPerson or extension
+          pregnancyWeek: calculatePregnancyWeek(data.birthDate), // Mock data, needs to be fetched or calculated
+          dueDate: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-dueDate")?.valueDate || "N/A", // Mock data, needs to be fetched or calculated
+          trimester: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-trimester")?.valueString || "N/A", // Mock data, needs to be fetched or calculated
+          riskLevel: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-riskLevel")?.valueString || "N/A", // Mock data, needs to be fetched or calculated
+          bloodType:
+            data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-bloodGroup")
+              ?.valueCodeableConcept?.text || "N/A",
+          lastVisit: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-lastVisit")?.valueDate || "N/A", // Mock data, needs to be fetched
+          nextAppointment: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-nextAppointment")?.valueDate || "N/A", // Mock data, needs to be fetched
+          weight: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-weight")?.valueQuantity?.value || "N/A", // Mock data, needs to be fetched from Observation
+          bloodPressure: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-bloodPressure")?.valueQuantity?.value || "N/A", // Mock data, needs to be fetched from Observation
+          heartRate: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-heartRate")?.valueQuantity?.value || "N/A", // Mock data, needs to be fetched from Observation
+          conditions: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-conditions")?.valueString?.split(",") || "N/A", // Mock data, needs to be fetched from Condition
+          medications: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-medications")?.valueString?.split(",") || "N/A", // Mock data, needs to be fetched from MedicationRequest
+          allergies: data.extension?.find((e: any) => e.url === "http://hl7.org/fhir/StructureDefinition/patient-allergies")?.valueString?.split(",") || "N/A", // Mock data, needs to be fetched from AllergyIntolerance
+        }
+        setPatient(transformedPatient)
+        setLoading(false)
+      } catch (e: any) {
+        setError(e.message)
+        setLoading(false)
+      }
+    }
+
+    if (patientId) {
+      fetchPatientDetails()
+    }
+  }, [patientId])
+
+  const calculateAge = (birthDate: string) => {
+    const today = new Date()
+    const birthDateObj = new Date(birthDate)
+    let age = today.getFullYear() - birthDateObj.getFullYear()
+    const month = today.getMonth() - birthDateObj.getMonth()
+    if (month < 0 || (month === 0 && today.getDate() < birthDateObj.getDate())) {
+      age--
+    }
+    return age
+  }
+
+  const calculatePregnancyWeek = (birthDate: string) => {
+    const today = new Date()
+    const birthDateObj = new Date(birthDate)
+    const diffInDays = Math.floor((today.getTime() - birthDateObj.getTime()) / (1000 * 60 * 60 * 24))
+    return Math.floor(diffInDays / 7)
+  }
 
   const getRiskColor = (riskLevel: string) => {
     switch (riskLevel) {
@@ -114,26 +160,26 @@ export default function PatientDetails() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Patient Information</Text>
-          <View style={[styles.riskBadge, { backgroundColor: getRiskColor(patient.riskLevel) }]}>
-            <Text style={styles.riskText}>{patient.riskLevel} Risk</Text>
+          <View style={[styles.riskBadge, { backgroundColor: getRiskColor(patient?.riskLevel || "Low") }]}>
+            <Text style={styles.riskText}>{patient?.riskLevel || "Low"} Risk</Text>
           </View>
         </View>
         <View style={styles.infoGrid}>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Age</Text>
-            <Text style={styles.infoValue}>{patient.age} years</Text>
+            <Text style={styles.infoValue}>{patient?.age} years</Text>
           </View>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Blood Type</Text>
-            <Text style={styles.infoValue}>{patient.bloodType}</Text>
+            <Text style={styles.infoValue}>{patient?.bloodType}</Text>
           </View>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Phone</Text>
-            <Text style={styles.infoValue}>{patient.phone}</Text>
+            <Text style={styles.infoValue}>{patient?.phone}</Text>
           </View>
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Email</Text>
-            <Text style={styles.infoValue}>{patient.email}</Text>
+            <Text style={styles.infoValue}>{patient?.email}</Text>
           </View>
         </View>
       </View>
@@ -143,15 +189,15 @@ export default function PatientDetails() {
         <Text style={styles.cardTitle}>Current Pregnancy</Text>
         <View style={styles.pregnancyInfo}>
           <View style={styles.pregnancyItem}>
-            <Text style={styles.pregnancyNumber}>{patient.pregnancyWeek}</Text>
+            <Text style={styles.pregnancyNumber}>{patient?.pregnancyWeek}</Text>
             <Text style={styles.pregnancyLabel}>Weeks</Text>
           </View>
           <View style={styles.pregnancyItem}>
-            <Text style={styles.pregnancyNumber}>{patient.trimester}</Text>
+            <Text style={styles.pregnancyNumber}>{patient?.trimester}</Text>
             <Text style={styles.pregnancyLabel}>Trimester</Text>
           </View>
           <View style={styles.pregnancyItem}>
-            <Text style={styles.pregnancyNumber}>{patient.dueDate}</Text>
+            <Text style={styles.pregnancyNumber}>{patient?.dueDate}</Text>
             <Text style={styles.pregnancyLabel}>Due Date</Text>
           </View>
         </View>
@@ -163,17 +209,17 @@ export default function PatientDetails() {
         <View style={styles.vitalsGrid}>
           <View style={styles.vitalItem}>
             <Ionicons name="fitness" size={24} color={Colors.primary[500]} />
-            <Text style={styles.vitalValue}>{patient.weight}</Text>
+            <Text style={styles.vitalValue}>{patient?.weight}</Text>
             <Text style={styles.vitalLabel}>Weight</Text>
           </View>
           <View style={styles.vitalItem}>
             <Ionicons name="heart" size={24} color="#EF4444" />
-            <Text style={styles.vitalValue}>{patient.bloodPressure}</Text>
+            <Text style={styles.vitalValue}>{patient?.bloodPressure}</Text>
             <Text style={styles.vitalLabel}>Blood Pressure</Text>
           </View>
           <View style={styles.vitalItem}>
             <Ionicons name="pulse" size={24} color="#10B981" />
-            <Text style={styles.vitalValue}>{patient.heartRate}</Text>
+            <Text style={styles.vitalValue}>{patient?.heartRate}</Text>
             <Text style={styles.vitalLabel}>Heart Rate</Text>
           </View>
         </View>
@@ -198,7 +244,7 @@ export default function PatientDetails() {
     <View style={styles.tabContent}>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Medical Conditions</Text>
-        {patient.conditions.map((condition, index) => (
+        {patient?.conditions.map((condition, index) => (
           <View key={index} style={styles.listItem}>
             <Ionicons name="medical" size={20} color={Colors.primary[500]} />
             <Text style={styles.listText}>{condition}</Text>
@@ -208,7 +254,7 @@ export default function PatientDetails() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Current Medications</Text>
-        {patient.medications.map((medication, index) => (
+        {patient?.medications.map((medication, index) => (
           <View key={index} style={styles.listItem}>
             <Ionicons name="medical" size={20} color="#10B981" />
             <Text style={styles.listText}>{medication}</Text>
@@ -218,7 +264,7 @@ export default function PatientDetails() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Allergies</Text>
-        {patient.allergies.map((allergy, index) => (
+        {patient?.allergies.map((allergy, index) => (
           <View key={index} style={styles.listItem}>
             <Ionicons name="warning" size={20} color="#EF4444" />
             <Text style={styles.listText}>{allergy}</Text>
@@ -235,7 +281,7 @@ export default function PatientDetails() {
         <View style={styles.appointmentItem}>
           <Ionicons name="calendar" size={24} color={Colors.primary[500]} />
           <View style={styles.appointmentInfo}>
-            <Text style={styles.appointmentDate}>{patient.nextAppointment}</Text>
+            <Text style={styles.appointmentDate}>{patient?.nextAppointment}</Text>
             <Text style={styles.appointmentType}>Regular Checkup</Text>
           </View>
         </View>
@@ -246,13 +292,38 @@ export default function PatientDetails() {
         <View style={styles.appointmentItem}>
           <Ionicons name="checkmark-circle" size={24} color="#10B981" />
           <View style={styles.appointmentInfo}>
-            <Text style={styles.appointmentDate}>{patient.lastVisit}</Text>
+            <Text style={styles.appointmentDate}>{patient?.lastVisit}</Text>
             <Text style={styles.appointmentType}>Routine Checkup - Completed</Text>
           </View>
         </View>
       </View>
     </View>
   )
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary[500]} />
+          <Text style={styles.loadingText}>Loading patient details...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Error: {error}</Text>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Colors.neutral[800]} />
+            <Text>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -261,7 +332,7 @@ export default function PatientDetails() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.neutral[800]} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{patient.name}</Text>
+        <Text style={styles.headerTitle}>{patient?.name}</Text>
         <TouchableOpacity style={styles.moreButton}>
           <Ionicons name="ellipsis-vertical" size={24} color={Colors.neutral[800]} />
         </TouchableOpacity>
@@ -510,5 +581,27 @@ const styles = StyleSheet.create({
     color: "white",
     fontWeight: "600",
     marginLeft: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: Colors.neutral[700],
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    color: "#EF4444",
+    marginBottom: 20,
+    textAlign: "center",
   },
 })

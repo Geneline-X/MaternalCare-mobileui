@@ -1,198 +1,192 @@
-import * as SecureStore from 'expo-secure-store';
-import { AuthTokens } from '../types';
+"use client"
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+import { useAuth } from "@clerk/clerk-expo"
+import { useCallback } from "react"
+import type { ApiResponse, ApiError } from "../types/api"
+import { CacheManager } from "./cacheManager"
 
-class ApiClient {
-  private tokens: AuthTokens | null = null;
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://maternalcare-backend.onrender.com"
 
-  async getTokens(): Promise<AuthTokens | null> {
-    if (this.tokens) return this.tokens;
-    
-    try {
-      const tokensString = await SecureStore.getItemAsync('auth_tokens');
-      if (tokensString) {
-        this.tokens = JSON.parse(tokensString);
-        return this.tokens;
-      }
-    } catch (error) {
-      console.error('Error getting tokens:', error);
-    }
-    return null;
+// Default cache TTLs (in milliseconds)
+const DEFAULT_CACHE_TTLS = {
+  GET: 5 * 60 * 1000, // 5 minutes for GET requests
+  POST: 0, // No caching for POST requests
+  PUT: 0, // No caching for PUT requests
+  DELETE: 0, // No caching for DELETE requests
+}
+
+export class ApiClient {
+  private baseURL: string
+  private getToken: () => Promise<string | null>
+
+  constructor(baseURL: string, getToken: () => Promise<string | null>) {
+    this.baseURL = baseURL
+    this.getToken = getToken
   }
 
-  async setTokens(tokens: AuthTokens): Promise<void> {
-    this.tokens = tokens;
-    await SecureStore.setItemAsync('auth_tokens', JSON.stringify(tokens));
-  }
-
-  async clearTokens(): Promise<void> {
-    this.tokens = null;
-    await SecureStore.deleteItemAsync('auth_tokens');
-  }
-
-  async refreshTokens(): Promise<boolean> {
-    const tokens = await this.getTokens();
-    if (!tokens) return false;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken: tokens.refreshToken }),
-      });
-
-      if (response.ok) {
-        const newTokens = await response.json();
-        await this.setTokens(newTokens);
-        return true;
-      }
-    } catch (error) {
-      console.error('Error refreshing tokens:', error);
-    }
-    
-    return false;
-  }
-
-  async request<T>(
+  async request<T = any>(
     endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const tokens = await this.getTokens();
-    
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+    options: RequestInit = {},
+    cacheOptions?: { ttl?: number; forceRefresh?: boolean },
+  ): Promise<ApiResponse<T>> {
+    const method = options.method || "GET"
+    const shouldCache = method === "GET" && !cacheOptions?.forceRefresh
+    const cacheTTL = cacheOptions?.ttl || DEFAULT_CACHE_TTLS[method as keyof typeof DEFAULT_CACHE_TTLS] || 0
 
-    if (tokens) {
-      // Check if token is about to expire (15 minutes before)
-      const now = Date.now();
-      if (tokens.expiresAt - now < 15 * 60 * 1000) {
-        await this.refreshTokens();
-        const refreshedTokens = await this.getTokens();
-        if (refreshedTokens) {
-          headers.Authorization = `Bearer ${refreshedTokens.accessToken}`;
-        }
-      } else {
-        headers.Authorization = `Bearer ${tokens.accessToken}`;
+    // Generate cache key for GET requests
+    let cacheKey = ""
+    if (shouldCache && cacheTTL > 0) {
+      const url = new URL(`${this.baseURL}${endpoint}`)
+      cacheKey = await CacheManager.generateKey(url.pathname, Object.fromEntries(url.searchParams))
+
+      // Try to get from cache first
+      const cachedData = await CacheManager.get<ApiResponse<T>>(cacheKey)
+      if (cachedData) {
+        console.log(`Cache hit for ${endpoint}`)
+        return cachedData
       }
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'API request failed');
-    }
-
-    return response.json();
-  }
-
-  // Auth endpoints
-  async login(email: string, password: string): Promise<{ user: any; tokens: AuthTokens }> {
-    const response = await this.request<{ user: any; tokens: AuthTokens }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    
-    await this.setTokens(response.tokens);
-    return response;
-  }
-
-  async logout(): Promise<void> {
     try {
-      await this.request('/auth/logout', { method: 'POST' });
-    } finally {
-      await this.clearTokens();
+      const token = await this.getToken()
+
+      const config: RequestInit = {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+          ...options.headers,
+        },
+      }
+
+      console.log(`Making API request to ${endpoint}`)
+      const response = await fetch(`${this.baseURL}${endpoint}`, config)
+
+      if (!response.ok) {
+        const errorData: ApiError = await response.json()
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      // Handle wrapped responses from backend
+      let responseData = data
+      if (data && typeof data === "object" && "success" in data) {
+        if (!data.success) {
+          throw new Error(data.message || "API request failed")
+        }
+        responseData = data.data || data
+      }
+
+      // Cache successful GET responses
+      if (shouldCache && cacheTTL > 0 && cacheKey) {
+        await CacheManager.set(cacheKey, responseData, cacheTTL)
+        console.log(`Cached response for ${endpoint}`)
+      }
+
+      return {
+        success: true,
+        data: responseData,
+        timestamp: data.timestamp || new Date().toISOString(),
+      }
+    } catch (error) {
+      console.error("API request failed:", error)
+      throw error
     }
   }
 
-  async register(userData: any): Promise<{ user: any; tokens: AuthTokens }> {
-    const response = await this.request<{ user: any; tokens: AuthTokens }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(userData),
-    });
-    
-    await this.setTokens(response.tokens);
-    return response;
+  async get<T = any>(
+    endpoint: string,
+    params?: Record<string, any>,
+    cacheOptions?: { ttl?: number; forceRefresh?: boolean },
+  ): Promise<ApiResponse<T>> {
+    const url = new URL(`${this.baseURL}${endpoint}`)
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.append(key, String(value))
+        }
+      })
+    }
+
+    return this.request<T>(url.pathname + url.search, { method: "GET" }, cacheOptions)
   }
 
-  // Patient endpoints
-  async getPatients(page = 1, limit = 20): Promise<any> {
-    return this.request(`fhir/Patient?_page=${page}&_count=${limit}`);
+  async post<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    // Clear related cache entries on POST
+    await this.invalidateRelatedCache(endpoint)
+
+    return this.request<T>(endpoint, {
+      method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
+    })
   }
 
-  async getPatient(id: string): Promise<any> {
-    return this.request(`fhir/Patient/${id}`);
+  async put<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    // Clear related cache entries on PUT
+    await this.invalidateRelatedCache(endpoint)
+
+    return this.request<T>(endpoint, {
+      method: "PUT",
+      body: data ? JSON.stringify(data) : undefined,
+    })
   }
 
-  async createPatient(patientData: any): Promise<any> {
-    return this.request('fhir/Patient', {
-      method: 'POST',
-      body: JSON.stringify(patientData),
-    });
+  async delete<T = any>(endpoint: string): Promise<ApiResponse<T>> {
+    // Clear related cache entries on DELETE
+    await this.invalidateRelatedCache(endpoint)
+
+    return this.request<T>(endpoint, {
+      method: "DELETE",
+    })
   }
 
-  // Pregnancy endpoints
-  async getPregnancies(patientId?: string): Promise<any> {
-    const query = patientId ? `?patient=${patientId}` : '';
-    return this.request(`fhir/Pregnancy${query}`);
+  // Helper method to invalidate related cache entries
+  private async invalidateRelatedCache(endpoint: string): Promise<void> {
+    try {
+      // Extract the base resource from the endpoint
+      const resourceMatch = endpoint.match(/\/api\/fhir\/(\w+)/)
+      if (resourceMatch) {
+        const resource = resourceMatch[1]
+        // Clear cache entries that might be related to this resource
+        const patterns = [
+          `/api/fhir/${resource}`,
+          `/api/fhir/${resource.toLowerCase()}`,
+          "/api/fhir/dashboard", // Dashboard data might be affected
+        ]
+
+        for (const pattern of patterns) {
+          await CacheManager.clear(await CacheManager.generateKey(pattern))
+        }
+      }
+    } catch (error) {
+      console.error("Error invalidating cache:", error)
+    }
   }
 
-  async createPregnancy(pregnancyData: any): Promise<any> {
-    return this.request('fhir/Pregnancy', {
-      method: 'POST',
-      body: JSON.stringify(pregnancyData),
-    });
+  // Method to clear all cache
+  async clearCache(): Promise<void> {
+    await CacheManager.clearAll()
   }
 
-  // Observation endpoints
-  async getObservations(patientId?: string): Promise<any> {
-    const query = patientId ? `?patient=${patientId}` : '';
-    return this.request(`fhir/Observation${query}`);
-  }
-
-  async createObservation(observationData: any): Promise<any> {
-    return this.request('fhir/Observation', {
-      method: 'POST',
-      body: JSON.stringify(observationData),
-    });
-  }
-
-  // Notification endpoints
-  async getNotifications(): Promise<any> {
-    return this.request('fhir/Notification');
-  }
-
-  async markNotificationRead(id: string): Promise<any> {
-    return this.request(`/fhir/Notification/${id}/read`, { method: 'POST' });
-  }
-
-  // Form endpoints
-  async getDynamicForm(id: string): Promise<any> {
-    return this.request(`fhir/DynamicForm/${id}`);
-  }
-
-  async submitDynamicForm(formId: string, data: any): Promise<any> {
-    return this.request(`fhir/DynamicForm/${formId}/submit`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  // SMS endpoints
-  async sendSMS(to: string, message: string): Promise<any> {
-    return this.request('/SMS/send', {
-      method: 'POST',
-      body: JSON.stringify({ to, message }),
-    });
+  // Method to clear expired cache
+  async clearExpiredCache(): Promise<void> {
+    await CacheManager.clearExpired()
   }
 }
 
-export const apiClient = new ApiClient();
+export const useApiClient = () => {
+  const { getToken } = useAuth()
+
+  return useCallback(() => {
+    return new ApiClient(API_BASE_URL, getToken)
+  }, [getToken])()
+}
+
+// Legacy export for backward compatibility
+export const apiClient = {
+  getPatients: async () => {
+    // Mock implementation for backward compatibility
+    return []
+  },
+}

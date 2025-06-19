@@ -1,100 +1,91 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ScrollView } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { LineChart } from "react-native-chart-kit"
 import { Dimensions } from "react-native"
 import { Colors } from "../../constants/colors"
 import { Spacing, BorderRadius, Shadows } from "../../constants/spacing"
-import type { HealthMetric, HealthStatus, TrendDirection } from "../../types/app"
 import { SafeAreaView } from "react-native-safe-area-context"
-
-
-const mockHealthData: HealthMetric[] = [
-  {
-    id: "1",
-    patientName: "Sarah Johnson",
-    patientId: "P001",
-    metric: "Blood Pressure",
-    value: "140/90",
-    unit: "mmHg",
-    status: "high",
-    timestamp: "2024-01-15T10:30:00Z",
-    normalRange: "120/80 - 130/85",
-    trend: "increasing",
-  },
-  {
-    id: "2",
-    patientName: "Emily Davis",
-    patientId: "P002",
-    metric: "Fetal Heart Rate",
-    value: "145",
-    unit: "bpm",
-    status: "normal",
-    timestamp: "2024-01-15T09:15:00Z",
-    normalRange: "120-160",
-    trend: "stable",
-  },
-  {
-    id: "3",
-    patientName: "Maria Rodriguez",
-    patientId: "P003",
-    metric: "Weight Gain",
-    value: "2.5",
-    unit: "kg",
-    status: "normal",
-    timestamp: "2024-01-15T08:45:00Z",
-    normalRange: "1-2 kg/month",
-    trend: "stable",
-  },
-  {
-    id: "4",
-    patientName: "Sarah Johnson",
-    patientId: "P001",
-    metric: "Glucose Level",
-    value: "165",
-    unit: "mg/dL",
-    status: "high",
-    timestamp: "2024-01-14T16:20:00Z",
-    normalRange: "< 140",
-    trend: "increasing",
-  },
-  {
-    id: "5",
-    patientName: "Lisa Chen",
-    patientId: "P004",
-    metric: "Blood Pressure",
-    value: "95/60",
-    unit: "mmHg",
-    status: "low",
-    timestamp: "2024-01-14T14:10:00Z",
-    normalRange: "120/80 - 130/85",
-    trend: "decreasing",
-  },
-]
-
-const chartData = {
-  labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-  datasets: [
-    {
-      data: [12, 8, 15, 6, 9, 4, 7],
-      color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-      strokeWidth: 2,
-    },
-  ],
-}
+import { useApiClient } from "../../utils/api"
+import { useToast } from "react-native-toast-notifications"
+import type {
+  HealthMetric,
+  HealthStatus,
+  TrendDirection,
+  HealthMetricsSummary,
+  HealthMetricsTrends,
+} from "../../types/api"
 
 export default function HealthMonitoring() {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedFilter, setSelectedFilter] = useState<HealthStatus | "all">("all")
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>([])
+  const [summary, setSummary] = useState<HealthMetricsSummary | null>(null)
+  const [trends, setTrends] = useState<HealthMetricsTrends | null>(null)
+  const [loading, setLoading] = useState(true)
+  const apiClient = useApiClient()
+  const toast = useToast()
+
+  const fetchHealthData = async () => {
+    try {
+      setRefreshing(true)
+
+      // Different cache TTLs for different data types
+      const cacheOptions = {
+        metrics: { ttl: 5 * 60 * 1000 }, // 5 minutes for health metrics (more dynamic)
+        summary: { ttl: 15 * 60 * 1000 }, // 15 minutes for summary
+        trends: { ttl: 30 * 60 * 1000 }, // 30 minutes for trends
+      }
+
+      const [metricsResponse, summaryResponse, trendsResponse] = await Promise.all([
+        apiClient.get(
+          "/api/fhir/health-metrics", 
+          {
+            _page: 1,
+            _count: 50,
+            ...(selectedFilter !== "all" && { status: selectedFilter }),
+          },
+          cacheOptions.metrics,
+        ),
+        apiClient.get("/api/fhir/health-metrics/summary", {}, cacheOptions.summary),
+        apiClient.get("/api/fhir/health-metrics/trends", { weeks: 7 }, cacheOptions.trends),
+      ])
+
+      // Handle wrapped responses - the API client now handles this automatically
+      if (metricsResponse.success && metricsResponse.data) {
+        // Backend returns { data: [...], pagination: {...} }
+        setHealthMetrics(metricsResponse.data.data || metricsResponse.data)
+      }
+
+      if (summaryResponse.success && summaryResponse.data) {
+        setSummary(summaryResponse.data)
+      }
+
+      if (trendsResponse.success && trendsResponse.data) {
+        setTrends(trendsResponse.data)
+      }
+    } catch (error) {
+      console.error("Error fetching health data:", error)
+      if ((error as Error).message?.includes("429")) {
+        toast.show("Rate limit reached. Showing cached data.", { type: "warning" })
+      } else {
+        toast.show("Failed to load health metrics", { type: "danger" })
+      }
+    } finally {
+      setRefreshing(false)
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchHealthData()
+  }, [selectedFilter])
 
   const onRefresh = React.useCallback(() => {
-    setRefreshing(true)
-    setTimeout(() => {
-      setRefreshing(false)
-    }, 2000)
-  }, [])
+    fetchHealthData()
+  }, [selectedFilter])
 
   const getStatusColor = (status: HealthStatus) => {
     switch (status) {
@@ -137,14 +128,7 @@ export default function HealthMonitoring() {
     }
   }
 
-  const filteredData = mockHealthData.filter((item) => {
-    if (selectedFilter === "all") return true
-    return item.status === selectedFilter
-  })
-
-  const alertCount = mockHealthData.filter(
-    (item) => item.status === "high" || item.status === "low" || item.status === "critical",
-  ).length
+  const alertCount = summary ? summary.lowCount + summary.highCount + summary.criticalCount : 0
 
   const renderHealthMetric = ({ item }: { item: HealthMetric }) => (
     <TouchableOpacity style={[styles.metricCard, item.status !== "normal" && styles.alertCard]}>
@@ -163,9 +147,7 @@ export default function HealthMonitoring() {
         <View style={styles.metricValue}>
           <Text style={styles.metricName}>{item.metric}</Text>
           <View style={styles.valueRow}>
-            <Text style={[styles.value, { color: getStatusColor(item.status) }]}>
-              {item.value} {item.unit}
-            </Text>
+            <Text style={[styles.value, { color: getStatusColor(item.status) }]}>{item.value}</Text>
             <View style={styles.trendContainer}>
               <Ionicons name={getTrendIcon(item.trend)} size={16} color={getStatusColor(item.status)} />
             </View>
@@ -193,6 +175,16 @@ export default function HealthMonitoring() {
     </TouchableOpacity>
   )
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading health metrics...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
@@ -209,60 +201,62 @@ export default function HealthMonitoring() {
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={{ paddingBottom: 100 }} // Add padding for navigation
+        contentContainerStyle={{ paddingBottom: 100 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Summary Cards */}
-        <View style={styles.summaryContainer}>
-          <View style={styles.summaryCard}>
-            <Ionicons name="heart" size={24} color={Colors.success[600]} />
-            <Text style={styles.summaryValue}>{mockHealthData.filter((item) => item.status === "normal").length}</Text>
-            <Text style={styles.summaryLabel}>Normal</Text>
+        {summary && (
+          <View style={styles.summaryContainer}>
+            <View style={styles.summaryCard}>
+              <Ionicons name="heart" size={24} color={Colors.success[600]} />
+              <Text style={styles.summaryValue}>{summary.normalCount}</Text>
+              <Text style={styles.summaryLabel}>Normal</Text>
+            </View>
+            <View style={[styles.summaryCard, { borderLeftColor: Colors.warning[500] }]}>
+              <Ionicons name="warning" size={24} color={Colors.warning[600]} />
+              <Text style={styles.summaryValue}>{summary.lowCount}</Text>
+              <Text style={styles.summaryLabel}>Low</Text>
+            </View>
+            <View style={[styles.summaryCard, { borderLeftColor: Colors.error[500] }]}>
+              <Ionicons name="alert-circle" size={24} color={Colors.error[600]} />
+              <Text style={styles.summaryValue}>{summary.highCount + summary.criticalCount}</Text>
+              <Text style={styles.summaryLabel}>High</Text>
+            </View>
           </View>
-          <View style={[styles.summaryCard, { borderLeftColor: Colors.warning[500] }]}>
-            <Ionicons name="warning" size={24} color={Colors.warning[600]} />
-            <Text style={styles.summaryValue}>{mockHealthData.filter((item) => item.status === "low").length}</Text>
-            <Text style={styles.summaryLabel}>Low</Text>
-          </View>
-          <View style={[styles.summaryCard, { borderLeftColor: Colors.error[500] }]}>
-            <Ionicons name="alert-circle" size={24} color={Colors.error[600]} />
-            <Text style={styles.summaryValue}>
-              {mockHealthData.filter((item) => item.status === "high" || item.status === "critical").length}
-            </Text>
-            <Text style={styles.summaryLabel}>High</Text>
-          </View>
-        </View>
+        )}
 
         {/* Alerts Trend Chart */}
-        <View style={styles.chartSection}>
-          <Text style={styles.sectionTitle}>Weekly Alert Trends</Text>
-          <View style={styles.chartCard}>
-            <LineChart
-              data={chartData}
-              width={Dimensions.get("window").width - 60}
-              height={180}
-              chartConfig={{
-                backgroundColor: "#ffffff",
-                backgroundGradientFrom: "#ffffff",
-                backgroundGradientTo: "#ffffff",
-                decimalPlaces: 0,
-                color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                style: {
-                  borderRadius: 16,
-                },
-                propsForDots: {
-                  r: "4",
-                  strokeWidth: "2",
-                  stroke: "#EF4444",
-                },
-              }}
-              bezier
-              style={styles.chart}
-            />
-            <Text style={styles.chartDescription}>Number of abnormal readings per day</Text>
+        {trends && (
+          <View style={styles.chartSection}>
+            <Text style={styles.sectionTitle}>Weekly Alert Trends</Text>
+            <View style={styles.chartCard}>
+              <LineChart
+                data={trends}
+                width={Dimensions.get("window").width - 60}
+                height={180}
+                chartConfig={{
+                  backgroundColor: "#ffffff",
+                  backgroundGradientFrom: "#ffffff",
+                  backgroundGradientTo: "#ffffff",
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+                  labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                  style: {
+                    borderRadius: 16,
+                  },
+                  propsForDots: {
+                    r: "4",
+                    strokeWidth: "2",
+                    stroke: "#EF4444",
+                  },
+                }}
+                bezier
+                style={styles.chart}
+              />
+              <Text style={styles.chartDescription}>Number of abnormal readings per day</Text>
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Filter Buttons */}
         <View style={styles.filterContainer}>
@@ -284,16 +278,20 @@ export default function HealthMonitoring() {
 
         {/* Health Metrics List */}
         <FlatList
-          data={filteredData}
+          data={healthMetrics}
           renderItem={renderHealthMetric}
           keyExtractor={(item) => item.id}
           style={styles.metricsList}
           scrollEnabled={false}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No health metrics found</Text>
+              <Text style={styles.emptySubtext}>Health data will appear here when available</Text>
+            </View>
+          }
         />
       </ScrollView>
-
-   
     </SafeAreaView>
   )
 }
@@ -532,5 +530,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter-Medium",
     color: Colors.primary[600],
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 16,
+    color: Colors.neutral[600],
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 50,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: Colors.neutral[600],
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: Colors.neutral[400],
   },
 })
