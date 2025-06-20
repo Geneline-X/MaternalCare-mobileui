@@ -59,7 +59,7 @@ export default function PatientLayout() {
         options={{
           title: "Appointments",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "calendar" : "calendar-outline"} size={26} color={color} />
+            <Ionicons name={focused ? "calendar" : "calendar-outline"} size={24} color={color} />
           ),
         }}
       />
