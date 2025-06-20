@@ -19,7 +19,9 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ]
     }
   },
   "include": [
@@ -27,9 +29,7 @@
     "contexts/**/*",
     "hooks/**/*",
     "types/**/*",
-    "utils/**/*",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "utils/**/*"
   ],
   "exclude": [
     "node_modules",

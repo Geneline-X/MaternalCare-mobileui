@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import SecureStore from 'expo-secure-store';
 
 /**
  * Logs the JWT token from SecureStore
